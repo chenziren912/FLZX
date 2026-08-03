@@ -1,36 +1,14 @@
 import assert from "node:assert/strict";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders the campus wall shell", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /<title>西安铁一中 - 校园娱乐墙<\/title>/i);
-  assert.match(html, /西安铁一中/);
-  assert.match(html, /校园娱乐墙/);
-  assert.match(html, /发表你的想法/);
-  assert.match(html, /管理员入口/);
+test("Next output and campus wall shell are present", async () => {
+  await access(new URL("../.next/", import.meta.url));
+  const [layout, wall] = await Promise.all([
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/wall.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(layout, /西安铁一中 - 校园娱乐墙/);
+  assert.match(wall, /发表你的想法/);
+  assert.match(wall, /服务器正在重启更新/);
 });

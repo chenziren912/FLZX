@@ -24,18 +24,21 @@ export class S3RequestError extends Error {
 
 const textEncoder = new TextEncoder();
 
-function bytes(value: string | ArrayBuffer | Uint8Array) {
-  if (typeof value === "string") {
-    return textEncoder.encode(value);
-  }
-  if (value instanceof ArrayBuffer) {
-    return new Uint8Array(value);
-  }
-  return value;
+function bytes(value: string | ArrayBuffer | Uint8Array): ArrayBuffer {
+  const source =
+    typeof value === "string"
+      ? textEncoder.encode(value)
+      : value instanceof ArrayBuffer
+        ? new Uint8Array(value)
+        : value;
+  const copy = new Uint8Array(source.byteLength);
+  copy.set(source);
+  return copy.buffer;
 }
 
-function hex(value: ArrayBuffer) {
-  return Array.from(new Uint8Array(value))
+function hex(value: ArrayBuffer | Uint8Array) {
+  const view = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
+  return Array.from(view)
     .map((item) => item.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -53,7 +56,7 @@ async function hmac(key: string | ArrayBuffer | Uint8Array, value: string) {
     ["sign"],
   );
   return new Uint8Array(
-    await crypto.subtle.sign("HMAC", cryptoKey, textEncoder.encode(value)),
+    await crypto.subtle.sign("HMAC", cryptoKey, bytes(value)),
   );
 }
 
@@ -197,7 +200,7 @@ export class S3CompatibleStore {
       } else if (typeof body === "string" || body instanceof ArrayBuffer) {
         payloadHash = await sha256(body);
       } else {
-        payloadHash = await sha256(new Uint8Array(body as ArrayBufferView));
+        payloadHash = "UNSIGNED-PAYLOAD";
       }
     }
 

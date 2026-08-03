@@ -29,8 +29,8 @@ body {
     radial-gradient(circle at 8% 2%, rgba(255, 255, 255, 0.95), transparent 28rem),
     radial-gradient(circle at 86% 9%, rgba(187, 215, 255, 0.75), transparent 26rem),
     linear-gradient(140deg, #f6f7fb 0%, #edf1f7 48%, #e9eef6 100%);
-  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display",
-    "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
 }
 
 button,
