@@ -1,4 +1,10 @@
-import { apiError, guardMaintenance, json, parseBody } from "../../../../../lib/api";
+import { apiError, guardMaintenance, parseBody } from "../../../../../lib/api";
+import {
+  deviceJson,
+  enforceSendLimit,
+  sendGateResponse,
+  withDeviceCookie,
+} from "../../../../../lib/device-rate";
 import { addInteraction, addReport, getPost, savePost, toPublicPost } from "../../../../../lib/wall-data";
 
 export async function POST(
@@ -7,13 +13,15 @@ export async function POST(
 ) {
   const blocked = await guardMaintenance();
   if (blocked) {
-    return blocked;
+    return withDeviceCookie(request, blocked);
   }
   const { id } = await params;
   const body = await parseBody<{
     action?: "like" | "report";
     visitorId?: string;
     reason?: string;
+    captchaChallengeId?: string;
+    captchaAnswer?: string;
   }>(request);
   const visitorId = typeof body?.visitorId === "string" ? body.visitorId.trim() : "";
   if (
@@ -22,12 +30,16 @@ export async function POST(
     visitorId.length > 120 ||
     (body?.reason !== undefined && typeof body.reason !== "string")
   ) {
-    return json({ error: "操作参数无效" }, { status: 400 });
+    return deviceJson(request, { error: "操作参数无效" }, { status: 400 });
   }
   try {
     const post = await getPost(id);
     if (!post) {
-      return json({ error: "帖子不存在" }, { status: 404 });
+      return deviceJson(request, { error: "帖子不存在" }, { status: 404 });
+    }
+    const gate = await enforceSendLimit(request, body ?? {});
+    if (!gate.allowed) {
+      return sendGateResponse(request, gate);
     }
     const added =
       body.action === "report"
@@ -41,12 +53,12 @@ export async function POST(
       }
       await savePost(post);
     }
-    return json({
+    return deviceJson(request, {
       success: true,
       action: added ? "added" : "unchanged",
       post: toPublicPost(post),
     });
   } catch (error) {
-    return apiError(error);
+    return withDeviceCookie(request, apiError(error));
   }
 }

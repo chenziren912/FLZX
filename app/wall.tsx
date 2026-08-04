@@ -39,7 +39,34 @@ type Reply = {
   createdAt: string;
 };
 
-type ApiError = Error & { maintenance?: boolean };
+type ApiError = Error & {
+  maintenance?: boolean;
+  captchaRequired?: boolean;
+  captchaInvalid?: boolean;
+  captchaExpired?: boolean;
+};
+
+type CaptchaProof = {
+  captchaChallengeId?: string;
+  captchaAnswer?: string;
+};
+
+type CaptchaChallenge = {
+  challengeId: string;
+  image: string;
+  expiresAt: number;
+  seconds: number;
+};
+
+type ActionFeedback = {
+  kind: "loading" | "success" | "error";
+  title: string;
+  detail: string;
+};
+
+type ActionAttempt = "success" | "captcha-error" | "failed";
+
+type CaptchaRetry = (proof: CaptchaProof) => Promise<ActionAttempt>;
 
 type UploadProgressState =
   | "pending"
@@ -62,10 +89,16 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const body = (await response.json().catch(() => ({}))) as T & {
     error?: string;
     maintenance?: boolean;
+    captchaRequired?: boolean;
+    captchaInvalid?: boolean;
+    captchaExpired?: boolean;
   };
   if (!response.ok) {
     const error = new Error(body.error || "请求失败") as ApiError;
     error.maintenance = body.maintenance;
+    error.captchaRequired = body.captchaRequired;
+    error.captchaInvalid = body.captchaInvalid;
+    error.captchaExpired = body.captchaExpired;
     throw error;
   }
   return body;
@@ -218,9 +251,129 @@ export default function Wall() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const [replyBusyPostId, setReplyBusyPostId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
+  const [captchaOpen, setCaptchaOpen] = useState(false);
+  const [captchaChallenge, setCaptchaChallenge] =
+    useState<CaptchaChallenge | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [captchaSecondsLeft, setCaptchaSecondsLeft] = useState(0);
+  const [captchaError, setCaptchaError] = useState("");
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captchaBusy, setCaptchaBusy] = useState(false);
   const notificationEnabledRef = useRef(false);
   const knownPostIdsRef = useRef<Set<string> | null>(null);
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const preparedMediaRef = useRef<Media[] | null>(null);
+  const captchaRetryRef = useRef<CaptchaRetry | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
+
+  function showActionFeedback(next: ActionFeedback) {
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+    setActionFeedback(next);
+    if (next.kind !== "loading") {
+      feedbackTimerRef.current = window.setTimeout(() => {
+        setActionFeedback(null);
+        feedbackTimerRef.current = null;
+      }, next.kind === "success" ? 1400 : 2200);
+    }
+  }
+
+  function showSendFailure(detail: string) {
+    showActionFeedback({
+      kind: "error",
+      title: "发送失败",
+      detail: detail || "请稍后再试。",
+    });
+  }
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current !== null) {
+        window.clearTimeout(feedbackTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!captchaOpen || !captchaChallenge) {
+      return;
+    }
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((captchaChallenge.expiresAt - Date.now()) / 1000),
+      );
+      setCaptchaSecondsLeft(remaining);
+      if (remaining === 0) {
+        setCaptchaError("验证码已过期，请刷新图片");
+      }
+    };
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [captchaChallenge, captchaOpen]);
+
+  async function loadCaptcha() {
+    setCaptchaLoading(true);
+    setCaptchaError("");
+    try {
+      const challenge = await readJson<CaptchaChallenge>("/api/captcha", {
+        method: "POST",
+      });
+      setCaptchaChallenge(challenge);
+      setCaptchaSecondsLeft(
+        Math.max(0, Math.ceil((challenge.expiresAt - Date.now()) / 1000)),
+      );
+    } catch (caught) {
+      setCaptchaError((caught as Error).message || "验证码加载失败，请稍后重试");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }
+
+  function openCaptcha(retry: CaptchaRetry) {
+    captchaRetryRef.current = retry;
+    setActionFeedback(null);
+    setCaptchaAnswer("");
+    setCaptchaChallenge(null);
+    setCaptchaSecondsLeft(0);
+    setCaptchaError("");
+    setCaptchaOpen(true);
+    void loadCaptcha();
+  }
+
+  function cancelCaptcha() {
+    captchaRetryRef.current = null;
+    setCaptchaOpen(false);
+    setCaptchaChallenge(null);
+    setCaptchaAnswer("");
+    setCaptchaError("");
+  }
+
+  async function submitCaptcha() {
+    const retry = captchaRetryRef.current;
+    if (!retry || !captchaChallenge || captchaSecondsLeft <= 0) {
+      setCaptchaError("验证码已过期，请刷新图片");
+      return;
+    }
+    if (captchaAnswer.length !== 6) {
+      setCaptchaError("请输入 6 位字母验证码");
+      return;
+    }
+    setCaptchaBusy(true);
+    setCaptchaError("");
+    const result = await retry({
+      captchaChallengeId: captchaChallenge.challengeId,
+      captchaAnswer,
+    });
+    setCaptchaBusy(false);
+    if (result === "success" || result === "failed") {
+      cancelCaptcha();
+    }
+  }
 
   const loadPosts = useCallback(async (keyword = "") => {
     try {
@@ -364,6 +517,7 @@ export default function Wall() {
       event.target.value = "";
       return;
     }
+    preparedMediaRef.current = null;
     const selected = Array.from(event.target.files ?? []);
     const nextFiles = [...files, ...selected].slice(0, 6);
     setFiles(nextFiles);
@@ -448,18 +602,28 @@ export default function Wall() {
     return uploaded;
   }
 
-  async function publish(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!content.trim() || busy) {
-      return;
-    }
+  async function submitPost(
+    proof: CaptchaProof = {},
+    fromCaptcha = false,
+  ): Promise<ActionAttempt> {
     setBusy(true);
     setError("");
     setStatus("正在发布…");
+    if (!fromCaptcha) {
+      showActionFeedback({
+        kind: "loading",
+        title: "正在发送",
+        detail: "正在把内容发布到校园墙。",
+      });
+    }
     const filesToUpload = files;
-    setUploadProgress(filesToUpload.map(createUploadProgressItem));
+    if (!preparedMediaRef.current) {
+      setUploadProgress(filesToUpload.map(createUploadProgressItem));
+    }
     try {
-      const media = await uploadFiles(filesToUpload);
+      const media =
+        preparedMediaRef.current ?? (await uploadFiles(filesToUpload));
+      preparedMediaRef.current = media;
       setStatus("正在发布…");
       const result = await readJson<{ post: Post; deleteToken: string }>(
         "/api/posts",
@@ -471,6 +635,7 @@ export default function Wall() {
             content,
             format: contentFormat,
             media,
+            ...proof,
           }),
         },
       );
@@ -482,41 +647,77 @@ export default function Wall() {
       ) as Record<string, string>;
       tokens[result.post.id] = result.deleteToken;
       window.localStorage.setItem("flzx-delete-tokens", JSON.stringify(tokens));
+      preparedMediaRef.current = null;
       setContent("");
       setAuthor("");
       setContentFormat("plain");
       setFiles([]);
       setUploadProgress([]);
-      setStatus("");
+      showActionFeedback({
+        kind: "success",
+        title: "发送成功",
+        detail: "内容已经发布到校园墙。",
+      });
       await loadPosts(activeSearch);
+      return "success";
     } catch (caught) {
       const requestError = caught as ApiError;
+      if (requestError.captchaRequired) {
+        if (fromCaptcha) {
+          setCaptchaError(requestError.message || "验证码错误，请重新输入");
+          return "captcha-error";
+        }
+        openCaptcha((nextProof) => submitPost(nextProof, true));
+        return "failed";
+      }
       if (
         requestError.maintenance ||
         requestError.message === "服务器正在重启更新"
       ) {
         setMaintenance(true);
-      } else {
-        setError(requestError.message);
       }
-      setStatus("");
+      showSendFailure(requestError.message);
+      return "failed";
     } finally {
+      setStatus("");
       setBusy(false);
     }
+  }
+
+  async function publish(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!content.trim() || busy) {
+      return;
+    }
+    await submitPost();
   }
 
   async function interact(
     postId: string,
     action: "like" | "report",
     reason = "",
-  ) {
+    proof: CaptchaProof = {},
+    fromCaptcha = false,
+  ): Promise<ActionAttempt> {
+    if (action === "report" && !fromCaptcha) {
+      showActionFeedback({
+        kind: "loading",
+        title: "正在发送",
+        detail: "正在提交举报，请稍候。",
+      });
+    }
     try {
       const result = await readJson<{ post: Post; action: "added" | "unchanged" }>(
         "/api/posts/" + postId + "/interact",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, reason, visitorId: visitorId() }),
+          body: JSON.stringify({
+            action,
+            reason,
+            visitorId: visitorId(),
+            ...proof,
+          }),
         },
       );
       setPosts((current) =>
@@ -530,11 +731,34 @@ export default function Wall() {
             ? "举报已提交，管理员会尽快审查。"
             : "你已经举报过这条内容。",
         );
+        showActionFeedback({
+          kind: "success",
+          title: "发送成功",
+          detail:
+            result.action === "added"
+              ? "举报已提交，管理员会尽快审查。"
+              : "你已经举报过这条内容。",
+        });
       }
-      return true;
+      return "success";
     } catch (caught) {
-      setError((caught as Error).message);
-      return false;
+      const requestError = caught as ApiError;
+      if (requestError.captchaRequired) {
+        if (fromCaptcha) {
+          setCaptchaError(requestError.message || "验证码错误，请重新输入");
+          return "captcha-error";
+        }
+        openCaptcha((nextProof) =>
+          interact(postId, action, reason, nextProof, true),
+        );
+        return "failed";
+      }
+      if (action === "report") {
+        showSendFailure(requestError.message);
+      } else {
+        setError(requestError.message);
+      }
+      return "failed";
     }
   }
 
@@ -590,8 +814,8 @@ export default function Wall() {
     if (!reportingPostId) {
       return;
     }
-    const success = await interact(reportingPostId, "report", reportReason.trim());
-    if (success) {
+    const result = await interact(reportingPostId, "report", reportReason.trim());
+    if (result === "success") {
       setReportingPostId(null);
       setReportReason("");
     }
@@ -626,12 +850,23 @@ export default function Wall() {
     }
   }
 
-  async function submitReply(postId: string) {
+  async function submitReply(
+    postId: string,
+    proof: CaptchaProof = {},
+    fromCaptcha = false,
+  ): Promise<ActionAttempt> {
     const content = (replyDrafts[postId] ?? "").trim();
     if (!content || replyBusyPostId) {
-      return;
+      return "failed";
     }
     setReplyBusyPostId(postId);
+    if (!fromCaptcha) {
+      showActionFeedback({
+        kind: "loading",
+        title: "正在发送",
+        detail: "正在提交评论，请稍候。",
+      });
+    }
     setReplyErrors((current) => {
       const next = { ...current };
       delete next[postId];
@@ -646,6 +881,7 @@ export default function Wall() {
           body: JSON.stringify({
             author: replyAuthors[postId] ?? "",
             content,
+            ...proof,
           }),
         },
       );
@@ -655,11 +891,28 @@ export default function Wall() {
       }));
       setReplyDrafts((current) => ({ ...current, [postId]: "" }));
       setExpandedReplyPostIds((current) => ({ ...current, [postId]: true }));
+      showActionFeedback({
+        kind: "success",
+        title: "发送成功",
+        detail: "评论已发布。",
+      });
+      return "success";
     } catch (caught) {
+      const requestError = caught as ApiError;
+      if (requestError.captchaRequired) {
+        if (fromCaptcha) {
+          setCaptchaError(requestError.message || "验证码错误，请重新输入");
+          return "captcha-error";
+        }
+        openCaptcha((nextProof) => submitReply(postId, nextProof, true));
+        return "failed";
+      }
       setReplyErrors((current) => ({
         ...current,
         [postId]: (caught as Error).message,
       }));
+      showSendFailure(requestError.message);
+      return "failed";
     } finally {
       setReplyBusyPostId(null);
     }
@@ -915,6 +1168,7 @@ export default function Wall() {
                         type="button"
                         disabled={busy}
                         onClick={() => {
+                          preparedMediaRef.current = null;
                           setFiles((current) =>
                             current.filter((_, fileIndex) => fileIndex !== index),
                           );
@@ -1191,6 +1445,134 @@ export default function Wall() {
           </section>
         </div>
       )}
+      {captchaOpen && (
+        <div
+          className="dialog-backdrop captcha-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !captchaBusy) {
+              cancelCaptcha();
+            }
+          }}
+        >
+          <section
+            className="glass-card dialog-card captcha-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="captcha-dialog-title"
+          >
+            <div className="captcha-card-topline">
+              <div>
+                <span className="captcha-kicker">SECURITY CHECK</span>
+                <h2 id="captcha-dialog-title">请完成验证</h2>
+              </div>
+              <span className="captcha-countdown" aria-live="polite">
+                {captchaSecondsLeft > 0 ? `${captchaSecondsLeft}s` : "已过期"}
+              </span>
+            </div>
+            <p className="captcha-description">
+              当前设备发送较频繁，请输入图片中的 6 位字母。验证码 30 秒内有效。
+            </p>
+            <div className="captcha-image-shell">
+              {captchaLoading ? (
+                <span className="captcha-image-spinner" aria-label="正在生成验证码" />
+              ) : captchaChallenge ? (
+                // The SVG is generated server-side and contains no executable markup.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={captchaChallenge.image} alt="验证码图片" />
+              ) : (
+                <span className="captcha-image-placeholder">验证码加载失败</span>
+              )}
+            </div>
+            <button
+              className="captcha-refresh"
+              type="button"
+              onClick={() => void loadCaptcha()}
+              disabled={captchaLoading || captchaBusy}
+            >
+              看不清，换一张
+            </button>
+            <input
+              className="captcha-input"
+              value={captchaAnswer}
+              onChange={(event) =>
+                setCaptchaAnswer(
+                  event.target.value.replace(/[^a-z]/gi, "").slice(0, 6),
+                )
+              }
+              placeholder="输入图片中的验证码"
+              aria-label="输入验证码"
+              autoComplete="off"
+              autoCapitalize="off"
+              maxLength={6}
+              disabled={captchaLoading || captchaBusy || captchaSecondsLeft <= 0}
+              autoFocus
+            />
+            {captchaError && (
+              <p className="captcha-error" role="alert">
+                {captchaError}
+              </p>
+            )}
+            <div className="dialog-actions captcha-actions">
+              <button
+                className="soft-button"
+                type="button"
+                onClick={cancelCaptcha}
+                disabled={captchaBusy}
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void submitCaptcha()}
+                disabled={
+                  captchaLoading ||
+                  captchaBusy ||
+                  captchaSecondsLeft <= 0 ||
+                  captchaAnswer.length !== 6
+                }
+              >
+                {captchaBusy ? "验证中…" : "提交验证"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {actionFeedback && (
+        <div
+          className="action-feedback-backdrop"
+          role={actionFeedback.kind === "loading" ? "status" : "alertdialog"}
+          aria-live="assertive"
+        >
+          <section
+            className={"glass-card action-feedback-card " + actionFeedback.kind}
+            role="document"
+            aria-label={actionFeedback.title}
+          >
+            <div className="feedback-symbol" aria-hidden="true">
+              {actionFeedback.kind === "loading" ? (
+                <span className="feedback-spinner" />
+              ) : actionFeedback.kind === "success" ? (
+                <span className="feedback-check" />
+              ) : (
+                <span className="feedback-cross" />
+              )}
+            </div>
+            <h2>{actionFeedback.title}</h2>
+            <p>{actionFeedback.detail}</p>
+            {actionFeedback.kind !== "loading" && (
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => setActionFeedback(null)}
+              >
+                知道了
+              </button>
+            )}
+          </section>
+        </div>
+      )}
       {markdownModeOpen && (
         <div className="markdown-editor-overlay">
           <section
@@ -1323,7 +1705,9 @@ export default function Wall() {
               </section>
             </div>
             <footer className="markdown-editor-footer">
-              <span>支持 # 标题、**加粗**、列表、引用、代码块、链接和表格</span>
+              <span>
+                支持标题、列表、引用、代码块、链接、表格和安全视频嵌入
+              </span>
               <span>按 Esc 返回发帖</span>
             </footer>
           </section>

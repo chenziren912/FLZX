@@ -1164,18 +1164,27 @@ a {
 }
 
 .markdown-preview-scroll {
+  min-width: 0;
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .markdown-body {
+  box-sizing: border-box;
   min-height: 100%;
+  min-width: 0;
   padding: 28px clamp(22px, 4vw, 48px) 70px;
   color: #30394b;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 14px;
   line-height: 1.78;
+}
+
+.markdown-body > * {
+  max-width: 100%;
 }
 
 .markdown-body > :first-child {
@@ -1271,6 +1280,7 @@ a {
 }
 
 .markdown-body pre {
+  box-sizing: border-box;
   overflow: auto;
   padding: 15px 17px;
   border-radius: 13px;
@@ -1314,8 +1324,21 @@ a {
 }
 
 .markdown-body img {
+  display: block;
   max-width: 100%;
   border-radius: 12px;
+}
+
+.markdown-body iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: clamp(220px, 38vw, 430px);
+  margin: 20px 0;
+  border: 1px solid rgba(83, 102, 151, 0.18);
+  border-radius: 16px;
+  background: #eef2f8;
+  box-shadow: 0 12px 28px rgba(35, 51, 84, 0.1);
 }
 
 .markdown-empty {
@@ -1463,6 +1486,303 @@ a {
   width: min(430px, 100%);
   padding: 30px;
   text-align: center;
+}
+
+.captcha-backdrop {
+  z-index: 80;
+}
+
+.captcha-card {
+  width: min(470px, 100%);
+  padding: 28px;
+  text-align: left;
+}
+
+.captcha-card-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.captcha-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #6372e9;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.captcha-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 26px;
+  letter-spacing: -0.05em;
+}
+
+.captcha-countdown {
+  min-width: 58px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 122, 255, 0.16);
+  border-radius: 12px;
+  color: #007aff;
+  background: rgba(0, 122, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.captcha-description {
+  margin: 11px 0 17px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.captcha-image-shell {
+  display: grid;
+  min-height: 104px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(115, 133, 177, 0.17);
+  border-radius: 17px;
+  background: rgba(247, 249, 253, 0.86);
+}
+
+.captcha-image-shell img {
+  display: block;
+  width: 100%;
+  height: 104px;
+  object-fit: cover;
+}
+
+.captcha-image-spinner,
+.feedback-spinner {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(0, 122, 255, 0.18);
+  border-top-color: #007aff;
+  border-radius: 50%;
+  animation: feedback-spin 800ms linear infinite;
+}
+
+.captcha-image-placeholder {
+  color: #8993a4;
+  font-size: 12px;
+}
+
+.captcha-refresh {
+  display: block;
+  margin: 9px auto 15px;
+  color: #007aff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.captcha-refresh:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.captcha-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 51px;
+  padding: 0 16px;
+  border: 1px solid rgba(120, 137, 177, 0.22);
+  border-radius: 15px;
+  outline: 0;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.64);
+  font-size: 19px;
+  font-weight: 850;
+  letter-spacing: 0.28em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.captcha-input:focus {
+  border-color: rgba(0, 122, 255, 0.46);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.11);
+}
+
+.captcha-error {
+  min-height: 19px;
+  margin: 9px 0 0;
+  color: #c62828;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.captcha-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.action-feedback-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 28, 38, 0.24);
+  -webkit-backdrop-filter: blur(17px);
+  backdrop-filter: blur(17px);
+}
+
+.action-feedback-card {
+  width: min(330px, 100%);
+  padding: 32px 28px 27px;
+  text-align: center;
+  animation: feedback-pop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.feedback-symbol {
+  position: relative;
+  display: grid;
+  width: 86px;
+  height: 86px;
+  margin: 0 auto 19px;
+  place-items: center;
+  border: 4px solid rgba(0, 122, 255, 0.17);
+  border-radius: 50%;
+}
+
+.action-feedback-card.loading .feedback-symbol {
+  border-color: rgba(0, 122, 255, 0.2);
+}
+
+.action-feedback-card.success .feedback-symbol {
+  border-color: rgba(52, 199, 89, 0.2);
+  color: #34c759;
+  animation: feedback-ring 700ms ease-out both;
+}
+
+.action-feedback-card.error .feedback-symbol {
+  border-color: rgba(255, 59, 48, 0.3);
+  color: #ff453a;
+  animation: feedback-shake 430ms ease-out both;
+}
+
+.feedback-check {
+  width: 35px;
+  height: 20px;
+  border-right: 7px solid currentColor;
+  border-bottom: 7px solid currentColor;
+  transform: rotate(45deg) scale(0);
+  animation: feedback-check-draw 420ms 120ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.feedback-cross {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 48px;
+  transform: rotate(0deg) scale(0.4);
+  animation: feedback-cross-pop 360ms 80ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.feedback-cross::before,
+.feedback-cross::after {
+  position: absolute;
+  top: 21px;
+  left: 1px;
+  width: 48px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.feedback-cross::before {
+  transform: rotate(45deg);
+}
+
+.feedback-cross::after {
+  transform: rotate(-45deg);
+}
+
+.action-feedback-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 27px;
+  letter-spacing: -0.05em;
+}
+
+.action-feedback-card p {
+  min-height: 22px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.action-feedback-card .primary-button {
+  min-width: 112px;
+  min-height: 42px;
+  margin-top: 20px;
+}
+
+@keyframes feedback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes feedback-pop {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes feedback-ring {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes feedback-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-5px);
+  }
+  70% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes feedback-check-draw {
+  to {
+    transform: rotate(45deg) scale(1);
+  }
+}
+
+@keyframes feedback-cross-pop {
+  to {
+    transform: rotate(0deg) scale(1);
+  }
 }
 
 .dialog-icon {
@@ -2199,6 +2519,22 @@ a {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.dark-mode .captcha-image-shell,
+.dark-mode .captcha-input {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark-mode .captcha-countdown {
+  border-color: rgba(90, 170, 255, 0.24);
+  background: rgba(90, 170, 255, 0.13);
+}
+
+.dark-mode .markdown-body iframe {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: #1c2029;
+}
+
 .dark-mode .search-loading-backdrop {
   background: rgba(0, 0, 0, 0.42);
 }
@@ -2213,4 +2549,8 @@ a {
 
 .dark-mode .dialog-backdrop {
   background: rgba(0, 0, 0, 0.52);
+}
+
+.dark-mode .action-feedback-backdrop {
+  background: rgba(0, 0, 0, 0.56);
 }
