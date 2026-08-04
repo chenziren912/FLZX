@@ -299,7 +299,10 @@ export default function Wall() {
       <div className="page-inner">
         <header className="topbar">
           <Link className="brand-lockup" href="/">
-            <span className="brand-mark">铁</span>
+            <span className="brand-mark">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/tieyi-logo.png" alt="西安铁一中校标" />
+            </span>
             <span className="brand-copy">
               <strong>西安铁一中</strong>
               <span>校园娱乐墙</span>
@@ -315,22 +318,30 @@ export default function Wall() {
             >
               {dark ? "☼" : "◐"}
             </button>
-            <a className="soft-button" href="/admin">
-              管理员入口
-            </a>
           </div>
         </header>
 
         <section className="hero-grid">
           <section className="glass-card hero-card">
-            <div>
-              <div className="hero-label">校园娱乐墙</div>
+            <div className="hero-content">
+              <div className="hero-brand">
+                <span className="hero-seal">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/tieyi-logo.png" alt="西安铁一中校标" />
+                </span>
+                <div className="hero-brand-copy">
+                  <span className="hero-overline">XI'AN TIEYI HIGH SCHOOL</span>
+                  <div className="hero-label">校园娱乐墙</div>
+                </div>
+              </div>
               <h1 className="hero-heading">西安铁一中</h1>
               <p className="hero-subtitle">畅所欲言，分享点滴。</p>
               <p className="hero-note">
-                网站解释权归 Yuyi 所有
-                <br />
-                联系: 17791202919　|　QQ: 2721608539　|　WX: Ybx121128
+                <span>网站解释权归 Yuyi 所有</span>
+                <span className="contact-line">
+                  联系：17791202919 <i aria-hidden="true">·</i> QQ：2721608539{" "}
+                  <i aria-hidden="true">·</i> WX：Ybx121128
+                </span>
               </p>
             </div>
             <form className="search-form" onSubmit={searchPosts}>
@@ -490,9 +501,6 @@ export default function Wall() {
           </div>
         </section>
 
-        <Link className="admin-link" href="/admin">
-          管理员入口
-        </Link>
       </div>
     </main>
   );

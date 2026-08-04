@@ -131,13 +131,20 @@ a {
   width: 42px;
   height: 42px;
   place-items: center;
+  overflow: hidden;
+  padding: 5px;
   border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 14px;
-  color: #ffffff;
-  background: linear-gradient(145deg, #111827, #42546d);
+  background: rgba(255, 255, 255, 0.74);
   box-shadow: 0 12px 28px rgba(31, 41, 55, 0.2);
-  font-size: 19px;
-  font-weight: 800;
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .brand-copy {
@@ -233,6 +240,50 @@ a {
   pointer-events: none;
 }
 
+.hero-content {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hero-seal {
+  display: grid;
+  width: 70px;
+  height: 70px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 23px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 14px 30px rgba(31, 41, 55, 0.12);
+}
+
+.hero-seal img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.hero-brand-copy {
+  display: grid;
+  gap: 9px;
+}
+
+.hero-overline {
+  color: #7b8491;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+}
+
 .hero-label {
   display: inline-flex;
   width: fit-content;
@@ -260,11 +311,12 @@ a {
 .hero-heading {
   position: relative;
   z-index: 1;
-  margin: 24px 0 12px;
-  letter-spacing: -0.085em;
-  font-size: clamp(3rem, 8vw, 6.8rem);
-  line-height: 0.9;
+  margin: 31px 0 12px;
+  letter-spacing: -0.075em;
+  font-size: clamp(2.5rem, 8vw, 5.6rem);
+  line-height: 1;
   font-weight: 850;
+  white-space: nowrap;
 }
 
 .hero-subtitle {
@@ -280,11 +332,25 @@ a {
 .hero-note {
   position: relative;
   z-index: 1;
+  display: grid;
+  gap: 3px;
   max-width: 31rem;
   margin: 16px 0 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.7;
+}
+
+.contact-line {
+  display: block;
+  color: #818a97;
+  font-size: 12px;
+}
+
+.contact-line i {
+  margin: 0 5px;
+  color: #b3bac4;
+  font-style: normal;
 }
 
 .search-form {
@@ -643,20 +709,6 @@ a {
   background: rgba(255, 59, 48, 0.08);
 }
 
-.admin-link {
-  display: block;
-  width: fit-content;
-  margin: 32px auto 0;
-  color: #8a92a0;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.admin-link:hover {
-  color: var(--accent);
-}
-
 .maintenance-banner {
   position: fixed;
   inset: 18px 18px auto;
@@ -925,7 +977,7 @@ a {
   }
 
   .hero-heading {
-    font-size: 4rem;
+    font-size: 3.3rem;
   }
 
   .search-form {
@@ -985,8 +1037,7 @@ a {
 
 .dark-mode .brand-mark {
   border-color: rgba(255, 255, 255, 0.18);
-  background: linear-gradient(145deg, #f5f5f7, #8992a3);
-  color: #202126;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .dark-mode .hero-card::after {
