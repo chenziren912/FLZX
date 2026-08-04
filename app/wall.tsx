@@ -189,6 +189,7 @@ export default function Wall() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [searching, setSearching] = useState(false);
   const [author, setAuthor] = useState("");
   const [content, setContent] = useState("");
   const [contentFormat, setContentFormat] = useState<"plain" | "markdown">(
@@ -685,10 +686,20 @@ export default function Wall() {
     }
   }
 
-  function searchPosts(event: FormEvent<HTMLFormElement>) {
+  async function searchPosts(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setActiveSearch(search.trim());
-    void loadPosts(search.trim());
+    if (searching) {
+      return;
+    }
+    const keyword = search.trim();
+    setSearching(true);
+    setError("");
+    setActiveSearch(keyword);
+    try {
+      await loadPosts(keyword);
+    } finally {
+      setSearching(false);
+    }
   }
 
   function openMarkdownEditor() {
@@ -814,10 +825,15 @@ export default function Wall() {
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="搜索关键字或昵称..."
                   aria-label="搜索关键字或昵称"
+                  disabled={searching}
                 />
               </label>
-              <button className="primary-button" type="submit">
-                搜索
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={searching}
+              >
+                {searching ? "检索中…" : "搜索"}
               </button>
             </form>
           </section>
@@ -1154,6 +1170,18 @@ export default function Wall() {
         </section>
 
       </div>
+      {searching && (
+        <div className="search-loading-backdrop" role="status" aria-live="assertive">
+          <section className="glass-card search-loading-card" aria-label="正在检索">
+            <div className="search-loading-icon">⌕</div>
+            <h2>正在检索</h2>
+            <p>正在从校园墙中查找相关内容，请稍候</p>
+            <div className="search-loading-track" aria-hidden="true">
+              <span />
+            </div>
+          </section>
+        </div>
+      )}
       {markdownModeOpen && (
         <div className="markdown-editor-overlay">
           <section
