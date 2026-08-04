@@ -28,6 +28,14 @@ type Post = {
   reports: number;
 };
 
+type Reply = {
+  id: string;
+  postId: string;
+  author: string;
+  content: string;
+  createdAt: string;
+};
+
 type ApiError = Error & { maintenance?: boolean };
 
 type UploadProgressState =
@@ -194,6 +202,14 @@ export default function Wall() {
   const [notificationEnabled, setNotificationEnabled] = useState(false);
   const [reportingPostId, setReportingPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("");
+  const [repliesByPost, setRepliesByPost] = useState<Record<string, Reply[]>>({});
+  const [expandedReplyPostIds, setExpandedReplyPostIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [replyAuthors, setReplyAuthors] = useState<Record<string, string>>({});
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
+  const [replyBusyPostId, setReplyBusyPostId] = useState<string | null>(null);
   const notificationEnabledRef = useRef(false);
   const knownPostIdsRef = useRef<Set<string> | null>(null);
 
@@ -552,6 +568,74 @@ export default function Wall() {
     }
   }
 
+  async function loadReplies(postId: string) {
+    setReplyErrors((current) => {
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    try {
+      const result = await readJson<{ replies: Reply[] }>(
+        "/api/posts/" + postId + "/reply",
+      );
+      setRepliesByPost((current) => ({ ...current, [postId]: result.replies }));
+      return true;
+    } catch (caught) {
+      setReplyErrors((current) => ({
+        ...current,
+        [postId]: (caught as Error).message,
+      }));
+      return false;
+    }
+  }
+
+  async function toggleReplies(postId: string) {
+    const expanded = Boolean(expandedReplyPostIds[postId]);
+    setExpandedReplyPostIds((current) => ({ ...current, [postId]: !expanded }));
+    if (!expanded && !Object.prototype.hasOwnProperty.call(repliesByPost, postId)) {
+      await loadReplies(postId);
+    }
+  }
+
+  async function submitReply(postId: string) {
+    const content = (replyDrafts[postId] ?? "").trim();
+    if (!content || replyBusyPostId) {
+      return;
+    }
+    setReplyBusyPostId(postId);
+    setReplyErrors((current) => {
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    try {
+      const result = await readJson<{ reply: Reply }>(
+        "/api/posts/" + postId + "/reply",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            author: replyAuthors[postId] ?? "",
+            content,
+          }),
+        },
+      );
+      setRepliesByPost((current) => ({
+        ...current,
+        [postId]: [...(current[postId] ?? []), result.reply],
+      }));
+      setReplyDrafts((current) => ({ ...current, [postId]: "" }));
+      setExpandedReplyPostIds((current) => ({ ...current, [postId]: true }));
+    } catch (caught) {
+      setReplyErrors((current) => ({
+        ...current,
+        [postId]: (caught as Error).message,
+      }));
+    } finally {
+      setReplyBusyPostId(null);
+    }
+  }
+
   async function removePost(postId: string) {
     const tokens = JSON.parse(
       window.localStorage.getItem("flzx-delete-tokens") ?? "{}",
@@ -847,6 +931,20 @@ export default function Wall() {
                       ♡ {post.likes}
                     </button>
                     <button
+                      className="post-action"
+                      type="button"
+                      onClick={() => void toggleReplies(post.id)}
+                      aria-expanded={Boolean(expandedReplyPostIds[post.id])}
+                    >
+                      {expandedReplyPostIds[post.id]
+                        ? "收起评论"
+                        : `评论${
+                            repliesByPost[post.id]
+                              ? ` ${repliesByPost[post.id].length}`
+                              : ""
+                          }`}
+                    </button>
+                    <button
                       className="post-action danger"
                       type="button"
                       onClick={() => {
@@ -864,6 +962,92 @@ export default function Wall() {
                       删除
                     </button>
                   </div>
+                  {expandedReplyPostIds[post.id] && (
+                    <section className="reply-panel" aria-label="评论区">
+                      <div className="reply-panel-head">
+                        <strong>
+                          评论 {repliesByPost[post.id]?.length ?? 0}
+                        </strong>
+                        <span>友善交流，畅所欲言</span>
+                      </div>
+                      {replyErrors[post.id] && (
+                        <p className="reply-error" role="alert">
+                          {replyErrors[post.id]}
+                        </p>
+                      )}
+                      {repliesByPost[post.id] === undefined ? (
+                        <p className="reply-hint" role="status">
+                          正在加载评论…
+                        </p>
+                      ) : repliesByPost[post.id].length === 0 ? (
+                        <p className="reply-hint">还没有评论，来抢个沙发吧。</p>
+                      ) : (
+                        <div className="reply-list">
+                          {repliesByPost[post.id].map((reply) => (
+                            <div className="reply-item" key={reply.id}>
+                              <span className="reply-avatar">
+                                {reply.author.slice(0, 1) || "匿"}
+                              </span>
+                              <div className="reply-body">
+                                <div className="reply-meta">
+                                  <strong>{reply.author}</strong>
+                                  <span>{formatTime(reply.createdAt)}</span>
+                                </div>
+                                <p>{reply.content}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <form
+                        className="reply-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitReply(post.id);
+                        }}
+                      >
+                        <input
+                          className="reply-author-input"
+                          value={replyAuthors[post.id] ?? ""}
+                          onChange={(event) =>
+                            setReplyAuthors((current) => ({
+                              ...current,
+                              [post.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="昵称（默认匿名同学）"
+                          maxLength={20}
+                          disabled={replyBusyPostId === post.id}
+                        />
+                        <div className="reply-compose-row">
+                          <textarea
+                            className="reply-input"
+                            value={replyDrafts[post.id] ?? ""}
+                            onChange={(event) =>
+                              setReplyDrafts((current) => ({
+                                ...current,
+                                [post.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="写下你的评论…"
+                            maxLength={200}
+                            rows={2}
+                            disabled={replyBusyPostId === post.id}
+                          />
+                          <button
+                            className="reply-submit"
+                            type="submit"
+                            disabled={
+                              replyBusyPostId === post.id ||
+                              !(replyDrafts[post.id] ?? "").trim()
+                            }
+                          >
+                            {replyBusyPostId === post.id ? "发送中…" : "评论"}
+                          </button>
+                        </div>
+                      </form>
+                    </section>
+                  )}
                 </article>
               ))
             )}

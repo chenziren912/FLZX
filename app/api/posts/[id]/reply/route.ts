@@ -1,6 +1,34 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../../lib/api";
 import { hasStorage } from "../../../../../lib/storage";
-import { getPost, ReplyRecord, saveReply } from "../../../../../lib/wall-data";
+import {
+  getPost,
+  listReplies,
+  ReplyRecord,
+  saveReply,
+} from "../../../../../lib/wall-data";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const blocked = await guardMaintenance();
+  if (blocked) {
+    return blocked;
+  }
+  if (!hasStorage()) {
+    return json({ replies: [], storageConfigured: false });
+  }
+  const { id } = await params;
+  try {
+    if (!(await getPost(id))) {
+      return json({ error: "帖子不存在" }, { status: 404 });
+    }
+    const replies = await listReplies(id);
+    return json({ replies, storageConfigured: true });
+  } catch (error) {
+    return apiError(error);
+  }
+}
 
 export async function POST(
   request: Request,
