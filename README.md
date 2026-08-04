@@ -18,6 +18,12 @@ npm run build
 npm run start
 ```
 
+Sites 发布构建使用：
+
+```bash
+npx vinext build
+```
+
 ## 持久化与媒体
 
 主数据和图片/视频都使用 S3 兼容接口写入 COS。默认配置已经指向：
