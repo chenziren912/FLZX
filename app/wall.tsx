@@ -30,6 +30,22 @@ type Post = {
 
 type ApiError = Error & { maintenance?: boolean };
 
+type UploadProgressState =
+  | "pending"
+  | "requesting"
+  | "uploading"
+  | "verifying"
+  | "complete"
+  | "error";
+
+type UploadProgressItem = {
+  loaded: number;
+  total: number;
+  percent: number;
+  state: UploadProgressState;
+  error?: string;
+};
+
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
   const body = (await response.json().catch(() => ({}))) as T & {
@@ -72,6 +88,92 @@ function mediaIcon(type: string) {
   return type.startsWith("video/") ? "▣" : "▧";
 }
 
+function createUploadProgressItem(file: File): UploadProgressItem {
+  return {
+    loaded: 0,
+    total: file.size,
+    percent: 0,
+    state: "pending",
+  };
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = -1;
+  do {
+    value /= 1024;
+    unitIndex += 1;
+  } while (value >= 1024 && unitIndex < units.length - 1);
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function overallUploadPercent(items: UploadProgressItem[]) {
+  if (items.length === 0) {
+    return 0;
+  }
+  const total = items.reduce((sum, item) => sum + item.total, 0);
+  const loaded = items.reduce(
+    (sum, item) => sum + Math.min(item.loaded, item.total),
+    0,
+  );
+  return total > 0 ? Math.round((loaded / total) * 100) : 0;
+}
+
+function uploadStateLabel(state: UploadProgressState) {
+  switch (state) {
+    case "requesting":
+      return "准备中";
+    case "uploading":
+      return "上传中";
+    case "verifying":
+      return "校验中";
+    case "complete":
+      return "已完成";
+    case "error":
+      return "上传失败";
+    default:
+      return "待上传";
+  }
+}
+
+function uploadFileWithProgress(
+  uploadUrl: string,
+  file: File,
+  onProgress: (loaded: number) => void,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", uploadUrl);
+    request.setRequestHeader("Content-Type", file.type);
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.min(event.loaded, file.size));
+      }
+    });
+    request.addEventListener("load", () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress(file.size);
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          request.status
+            ? `媒体上传失败（${request.status}）`
+            : "媒体上传失败",
+        ),
+      );
+    });
+    request.addEventListener("error", () => reject(new Error("媒体上传网络错误")));
+    request.addEventListener("abort", () => reject(new Error("媒体上传已取消")));
+    request.send(file);
+  });
+}
+
 export default function Wall() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [search, setSearch] = useState("");
@@ -79,6 +181,7 @@ export default function Wall() {
   const [author, setAuthor] = useState("");
   const [content, setContent] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -214,45 +317,90 @@ export default function Wall() {
   }
 
   function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    if (busy) {
+      event.target.value = "";
+      return;
+    }
     const selected = Array.from(event.target.files ?? []);
-    setFiles((current) => [...current, ...selected].slice(0, 6));
+    const nextFiles = [...files, ...selected].slice(0, 6);
+    setFiles(nextFiles);
+    setUploadProgress(nextFiles.map(createUploadProgressItem));
     event.target.value = "";
   }
 
-  async function uploadFiles() {
+  function updateUploadProgress(
+    index: number,
+    update: Partial<UploadProgressItem>,
+  ) {
+    setUploadProgress((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...update } : item,
+      ),
+    );
+  }
+
+  async function uploadFiles(filesToUpload: File[]) {
     const uploaded: Media[] = [];
-    for (const file of files) {
-      setStatus("正在上传 " + file.name + "…");
-      const ticket = await readJson<{ uploadUrl: string; key: string }>(
-        "/api/media/upload-url",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-          }),
-        },
+    for (const [index, file] of filesToUpload.entries()) {
+      updateUploadProgress(index, {
+        loaded: 0,
+        total: file.size,
+        percent: 0,
+        state: "requesting",
+        error: undefined,
+      });
+      setStatus(
+        `准备上传 ${index + 1}/${filesToUpload.length}：${file.name}`,
       );
-      const upload = await fetch(ticket.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!upload.ok) {
-        throw new Error("媒体上传失败");
+      try {
+        const ticket = await readJson<{ uploadUrl: string; key: string }>(
+          "/api/media/upload-url",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: file.name,
+              type: file.type,
+              size: file.size,
+            }),
+          },
+        );
+        updateUploadProgress(index, { state: "uploading" });
+        setStatus(`上传中 ${index + 1}/${filesToUpload.length}：${file.name}`);
+        await uploadFileWithProgress(ticket.uploadUrl, file, (loaded) => {
+          const percent =
+            file.size > 0 ? Math.round((loaded / file.size) * 100) : 0;
+          updateUploadProgress(index, { loaded, percent, state: "uploading" });
+        });
+        updateUploadProgress(index, {
+          loaded: file.size,
+          percent: 100,
+          state: "verifying",
+        });
+        setStatus(`校验中 ${index + 1}/${filesToUpload.length}：${file.name}`);
+        const result = await readJson<{ media: Media }>(
+          "/api/media/complete",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              key: ticket.key,
+              name: file.name,
+              type: file.type,
+            }),
+          },
+        );
+        updateUploadProgress(index, {
+          loaded: file.size,
+          percent: 100,
+          state: "complete",
+        });
+        uploaded.push(result.media);
+      } catch (caught) {
+        const message = (caught as Error).message || "媒体上传失败";
+        updateUploadProgress(index, { state: "error", error: message });
+        throw caught;
       }
-      const result = await readJson<{ media: Media }>("/api/media/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: ticket.key,
-          name: file.name,
-          type: file.type,
-        }),
-      });
-      uploaded.push(result.media);
     }
     return uploaded;
   }
@@ -265,8 +413,11 @@ export default function Wall() {
     setBusy(true);
     setError("");
     setStatus("正在发布…");
+    const filesToUpload = files;
+    setUploadProgress(filesToUpload.map(createUploadProgressItem));
     try {
-      const media = await uploadFiles();
+      const media = await uploadFiles(filesToUpload);
+      setStatus("正在发布…");
       const result = await readJson<{ post: Post; deleteToken: string }>(
         "/api/posts",
         {
@@ -290,6 +441,7 @@ export default function Wall() {
       setContent("");
       setAuthor("");
       setFiles([]);
+      setUploadProgress([]);
       setStatus("");
       await loadPosts(activeSearch);
     } catch (caught) {
@@ -427,6 +579,8 @@ export default function Wall() {
     void loadPosts(search.trim());
   }
 
+  const totalUploadPercent = overallUploadPercent(uploadProgress);
+
   return (
     <main className="wall-page">
       <div className="ambient-orb ambient-orb-one" />
@@ -532,28 +686,88 @@ export default function Wall() {
                 maxLength={200}
                 required
               />
+              {uploadProgress.length > 0 && (
+                <div className="upload-summary" aria-live="polite">
+                  <div className="upload-summary-head">
+                    <span>文件上传进度</span>
+                    <strong>{totalUploadPercent}%</strong>
+                  </div>
+                  <div
+                    className="upload-progress-track upload-progress-track-total"
+                    role="progressbar"
+                    aria-label="全部文件上传进度"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={totalUploadPercent}
+                  >
+                    <span style={{ width: `${totalUploadPercent}%` }} />
+                  </div>
+                </div>
+              )}
               <div className="file-list">
                 {files.map((file, index) => (
-                  <div className="file-chip" key={file.name + file.size + index}>
-                    <b>{mediaIcon(file.type)}</b>
-                    <span>{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFiles((current) =>
-                          current.filter((_, fileIndex) => fileIndex !== index),
-                        )
-                      }
-                      aria-label={"移除 " + file.name}
-                    >
-                      ×
-                    </button>
+                  <div className="file-item" key={file.name + file.size + index}>
+                    <div className="file-chip">
+                      <b>{mediaIcon(file.type)}</b>
+                      <span>{file.name}</span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setFiles((current) =>
+                            current.filter((_, fileIndex) => fileIndex !== index),
+                          );
+                          setUploadProgress((current) =>
+                            current.filter((_, fileIndex) => fileIndex !== index),
+                          );
+                        }}
+                        aria-label={"移除 " + file.name}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {uploadProgress[index] && (
+                      <div className="upload-progress-item">
+                        <div className="upload-progress-meta">
+                          <span>
+                            {uploadStateLabel(uploadProgress[index].state)} · {formatBytes(uploadProgress[index].loaded)} / {formatBytes(uploadProgress[index].total)}
+                          </span>
+                          <strong>{uploadProgress[index].percent}%</strong>
+                        </div>
+                        <div
+                          className={
+                            "upload-progress-track" +
+                            (uploadProgress[index].state === "error"
+                              ? " failed"
+                              : uploadProgress[index].state === "complete"
+                                ? " completed"
+                                : "")
+                          }
+                          role="progressbar"
+                          aria-label={file.name + " 上传进度"}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={uploadProgress[index].percent}
+                        >
+                          <span
+                            style={{
+                              width: `${uploadProgress[index].percent}%`,
+                            }}
+                          />
+                        </div>
+                        {uploadProgress[index].error && (
+                          <small className="upload-progress-error">
+                            {uploadProgress[index].error}
+                          </small>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               <div className="composer-bottom">
                 <div className="composer-tools">
-                  <label className="attach-button">
+                  <label className={"attach-button" + (busy ? " disabled" : "")}>
                     <span>＋</span>
                     图片 / 视频
                     <input
@@ -561,6 +775,7 @@ export default function Wall() {
                       accept="image/*,video/*"
                       multiple
                       hidden
+                      disabled={busy}
                       onChange={handleFiles}
                     />
                   </label>
