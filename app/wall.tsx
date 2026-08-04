@@ -117,17 +117,6 @@ function formatTime(value: string) {
   }
 }
 
-function visitorId() {
-  const key = "flzx-visitor-id";
-  const existing = window.localStorage.getItem(key);
-  if (existing) {
-    return existing;
-  }
-  const value = crypto.randomUUID();
-  window.localStorage.setItem(key, value);
-  return value;
-}
-
 function mediaIcon(type: string) {
   return type.startsWith("video/") ? "▣" : "▧";
 }
@@ -365,13 +354,23 @@ export default function Wall() {
     }
     setCaptchaBusy(true);
     setCaptchaError("");
-    const result = await retry({
-      captchaChallengeId: captchaChallenge.challengeId,
-      captchaAnswer,
-    });
-    setCaptchaBusy(false);
-    if (result === "success" || result === "failed") {
-      cancelCaptcha();
+    try {
+      const result = await retry({
+        captchaChallengeId: captchaChallenge.challengeId,
+        captchaAnswer,
+      });
+      // Only a confirmed successful API response may close this dialog.
+      // Incorrect, expired, and ordinary failed requests all stay visible so
+      // they can never be mistaken for a successful submission.
+      if (result === "success") {
+        cancelCaptcha();
+      } else if (result === "failed") {
+        setCaptchaError((current) => current || "发送未完成，请检查后重试。");
+      }
+    } catch {
+      setCaptchaError("验证后的发送失败，请重新尝试。");
+    } finally {
+      setCaptchaBusy(false);
     }
   }
 
@@ -715,7 +714,6 @@ export default function Wall() {
           body: JSON.stringify({
             action,
             reason,
-            visitorId: visitorId(),
             ...proof,
           }),
         },
@@ -1672,6 +1670,19 @@ export default function Wall() {
               >
                 链接
               </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  insertMarkdown(
+                    '<iframe src="https://player.bilibili.com/player.html?bvid=',
+                    '" title="视频"></iframe>',
+                    "BV1xxxx",
+                  )
+                }
+              >
+                嵌入
+              </button>
             </div>
             <div className="markdown-editor-workspace">
               <section className="markdown-editor-pane">
@@ -1685,7 +1696,7 @@ export default function Wall() {
                   value={content}
                   onChange={(event) => setContent(event.target.value)}
                   onKeyDown={handleMarkdownKeyDown}
-                  placeholder="# 写下你的想法\n\n支持标题、列表、引用、代码和链接…"
+                  placeholder={'# 写下你的想法\n\n视频请使用 Bilibili / YouTube / Vimeo 的 HTTPS 播放地址…'}
                   maxLength={200}
                   autoFocus
                   spellCheck="false"
@@ -1706,7 +1717,7 @@ export default function Wall() {
             </div>
             <footer className="markdown-editor-footer">
               <span>
-                支持标题、列表、引用、代码块、链接、表格和安全视频嵌入
+                支持标题、列表、引用、代码块、链接、表格和安全视频嵌入（Bilibili / YouTube / Vimeo）
               </span>
               <span>按 Esc 返回发帖</span>
             </footer>

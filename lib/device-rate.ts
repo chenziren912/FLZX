@@ -10,7 +10,9 @@ import {
 } from "./storage";
 
 export const DEVICE_COOKIE_NAME = "flzx_device";
-export const SEND_LIMIT = 3;
+// The first five submissions in a rolling minute are allowed. The sixth
+// submission (and each later one in that minute) must complete a captcha.
+export const SEND_LIMIT = 5;
 export const SEND_WINDOW_MS = 60 * 1000;
 export const CAPTCHA_TTL_MS = 30 * 1000;
 

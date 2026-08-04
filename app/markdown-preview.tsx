@@ -18,25 +18,74 @@ const ALLOWED_IFRAME_HOSTS = new Set([
 
 let sanitizerPromise: Promise<(rawHtml: string) => string> | null = null;
 
-function isAllowedIframeSource(value: string) {
-  try {
-    const url = new URL(value, window.location.origin);
-    if (url.protocol !== "https:" || !ALLOWED_IFRAME_HOSTS.has(url.hostname)) {
-      return false;
-    }
-    if (url.hostname === "player.bilibili.com") {
-      return url.pathname === "/player.html";
-    }
-    if (
-      url.hostname === "www.youtube.com" ||
-      url.hostname === "www.youtube-nocookie.com"
-    ) {
-      return url.pathname.startsWith("/embed/");
-    }
-    return url.pathname.startsWith("/video/");
-  } catch {
-    return false;
+function resolveIframeSource(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
   }
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : "https://" + trimmed;
+  try {
+    return new URL(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function iframeDecision(value: string) {
+  const url = resolveIframeSource(value);
+  if (!url) {
+    return { url: null, message: "此 iframe 缺少有效的 HTTPS 地址。" };
+  }
+  if (url.protocol !== "https:") {
+    return { url: null, message: "为保护安全，仅支持 HTTPS iframe。" };
+  }
+  if (!ALLOWED_IFRAME_HOSTS.has(url.hostname)) {
+    return {
+      url: null,
+      message: "此来源暂不在安全嵌入名单中，仅支持 Bilibili、YouTube 和 Vimeo。",
+    };
+  }
+  if (url.hostname === "player.bilibili.com") {
+    return url.pathname === "/player.html"
+      ? { url, message: "" }
+      : { url: null, message: "Bilibili iframe 必须使用 player.html 播放地址。" };
+  }
+  if (
+    url.hostname === "www.youtube.com" ||
+    url.hostname === "www.youtube-nocookie.com"
+  ) {
+    return url.pathname.startsWith("/embed/")
+      ? { url, message: "" }
+      : { url: null, message: "YouTube iframe 必须使用 /embed/ 视频地址。" };
+  }
+  return url.pathname.startsWith("/video/")
+    ? { url, message: "" }
+    : { url: null, message: "Vimeo iframe 必须使用 /video/ 播放地址。" };
+}
+
+function iframeWarning(message: string) {
+  const warning = document.createElement("div");
+  warning.className = "markdown-embed-warning";
+  warning.setAttribute("role", "note");
+  warning.textContent = "安全提示：" + message;
+  return warning;
+}
+
+function configureIframe(iframe: HTMLIFrameElement) {
+  const decision = iframeDecision(iframe.getAttribute("src") ?? "");
+  if (!decision.url) {
+    iframe.replaceWith(iframeWarning(decision.message));
+    return;
+  }
+  iframe.setAttribute("src", decision.url.href);
+  iframe.setAttribute("loading", "lazy");
+  iframe.setAttribute("referrerpolicy", "no-referrer");
+  iframe.setAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin allow-presentation",
+  );
 }
 
 function getSanitizer() {
@@ -61,17 +110,7 @@ function getSanitizer() {
         const template = document.createElement("template");
         template.innerHTML = String(safeHtml);
         template.content.querySelectorAll("iframe").forEach((iframe) => {
-          const source = iframe.getAttribute("src") ?? "";
-          if (!isAllowedIframeSource(source)) {
-            iframe.remove();
-            return;
-          }
-          iframe.setAttribute("loading", "lazy");
-          iframe.setAttribute("referrerpolicy", "no-referrer");
-          iframe.setAttribute(
-            "sandbox",
-            "allow-scripts allow-same-origin allow-presentation",
-          );
+          configureIframe(iframe);
         });
         return template.innerHTML;
       };

@@ -2,6 +2,7 @@ import { apiError, guardMaintenance, parseBody } from "../../../../../lib/api";
 import {
   deviceJson,
   enforceSendLimit,
+  getDeviceId,
   sendGateResponse,
   withDeviceCookie,
 } from "../../../../../lib/device-rate";
@@ -18,21 +19,21 @@ export async function POST(
   const { id } = await params;
   const body = await parseBody<{
     action?: "like" | "report";
-    visitorId?: string;
     reason?: string;
     captchaChallengeId?: string;
     captchaAnswer?: string;
   }>(request);
-  const visitorId = typeof body?.visitorId === "string" ? body.visitorId.trim() : "";
   if (
     (body?.action !== "like" && body?.action !== "report") ||
-    !visitorId ||
-    visitorId.length > 120 ||
     (body?.reason !== undefined && typeof body.reason !== "string")
   ) {
     return deviceJson(request, { error: "操作参数无效" }, { status: 400 });
   }
   try {
+    // The id lives in an HttpOnly cookie, rather than in localStorage or a
+    // request field, so refreshing the page cannot create a new like/report
+    // identity for the same browser.
+    const deviceId = getDeviceId(request);
     const post = await getPost(id);
     if (!post) {
       return deviceJson(request, { error: "帖子不存在" }, { status: 404 });
@@ -43,8 +44,8 @@ export async function POST(
     }
     const added =
       body.action === "report"
-        ? Boolean(await addReport(id, visitorId, body.reason?.trim() ?? ""))
-        : await addInteraction(id, visitorId, body.action);
+        ? Boolean(await addReport(id, deviceId, body.reason?.trim() ?? ""))
+        : await addInteraction(id, deviceId, body.action);
     if (added) {
       if (body.action === "like") {
         post.likes += 1;
