@@ -695,9 +695,18 @@ export default function Wall() {
     setSearching(true);
     setError("");
     setActiveSearch(keyword);
+    const loadingStartedAt = performance.now();
     try {
       await loadPosts(keyword);
     } finally {
+      const minimumVisibleTime = 420;
+      const remainingTime = Math.max(
+        0,
+        minimumVisibleTime - (performance.now() - loadingStartedAt),
+      );
+      if (remainingTime > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingTime));
+      }
       setSearching(false);
     }
   }
