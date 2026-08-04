@@ -6,7 +6,7 @@ import {
   listAllKeys,
   readJson,
   writeJson,
-  MEDIA_PREFIX,
+  isMediaKey,
 } from "./storage";
 
 export type MediaRecord = {
@@ -42,9 +42,23 @@ export type AnnouncementRecord = {
   createdAt: string;
 };
 
+export type ReportStatus = "open" | "resolved" | "dismissed";
+
+export type ReportRecord = {
+  id: string;
+  postId: string;
+  reason: string;
+  createdAt: string;
+  status: ReportStatus;
+  visitorHash: string;
+};
+
+export type SafeReport = Omit<ReportRecord, "visitorHash">;
+
 const POSTS_PREFIX = DATA_PREFIX + "/posts/";
 const REPLIES_PREFIX = DATA_PREFIX + "/replies/";
 const ANNOUNCEMENTS_PREFIX = DATA_PREFIX + "/announcements/";
+const REPORTS_PREFIX = DATA_PREFIX + "/reports/";
 
 export function postKey(createdAt: string, id: string) {
   return POSTS_PREFIX + createdAt.replace(/\D/g, "") + "_" + id + ".json";
@@ -66,6 +80,10 @@ export function announcementKey(createdAt: string, id: string) {
   return ANNOUNCEMENTS_PREFIX + createdAt.replace(/\D/g, "") + "_" + id + ".json";
 }
 
+export function reportKey(createdAt: string, id: string) {
+  return REPORTS_PREFIX + createdAt.replace(/\D/g, "") + "_" + id + ".json";
+}
+
 async function findKeyById(prefix: string, id: string) {
   if (!hasStorage()) {
     return null;
@@ -83,18 +101,32 @@ export async function listPosts(search = "") {
   const records = (
     await Promise.all(keys.map((key) => readJson<PostRecord>(store, key)))
   ).filter((item): item is PostRecord => Boolean(item));
-  const keyword = search.trim().toLowerCase();
+  const keyword = search.trim().slice(0, 80).toLowerCase();
   return records
     .filter((post) => {
       if (!keyword) {
         return true;
       }
       return (
-        post.author.toLowerCase().includes(keyword) ||
-        post.content.toLowerCase().includes(keyword)
+        (post.author ?? "").toLowerCase().includes(keyword) ||
+        (post.content ?? "").toLowerCase().includes(keyword)
       );
     })
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export type PublicPost = Omit<PostRecord, "deleteTokenHash">;
+
+export function toPublicPost(post: PostRecord): PublicPost {
+  const { deleteTokenHash, ...publicPost } = post;
+  void deleteTokenHash;
+  return publicPost;
+}
+
+export function toSafeReport(report: ReportRecord): SafeReport {
+  const { visitorHash, ...safeReport } = report;
+  void visitorHash;
+  return safeReport;
 }
 
 export async function getPost(id: string) {
@@ -161,12 +193,41 @@ export async function saveAnnouncement(announcement: AnnouncementRecord) {
   );
 }
 
-export async function addInteraction(
+export async function listReports(status?: ReportStatus) {
+  if (!hasStorage()) {
+    return [];
+  }
+  const store = getStorage();
+  const keys = await listAllKeys(store, REPORTS_PREFIX);
+  const records = (
+    await Promise.all(keys.map((key) => readJson<ReportRecord>(store, key)))
+  ).filter((item): item is ReportRecord => Boolean(item));
+  return records
+    .filter((report) => !status || report.status === status)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function updateReportStatus(id: string, status: ReportStatus) {
+  const key = await findKeyById(REPORTS_PREFIX, id);
+  if (!key) {
+    return null;
+  }
+  const report = await readJson<ReportRecord>(getStorage(), key);
+  if (!report) {
+    return null;
+  }
+  const updated = { ...report, status };
+  await writeJson(getStorage(), key, updated);
+  return updated;
+}
+
+async function claimInteraction(
   postId: string,
   visitorId: string,
   action: "like" | "report",
 ) {
   const store = getStorage();
+  const visitorHash = await sha256Hex(visitorId.trim());
   const key =
     DATA_PREFIX +
     "/interactions/" +
@@ -174,15 +235,43 @@ export async function addInteraction(
     "/" +
     action +
     "_" +
-    (await sha256Hex(visitorId)) +
+    visitorHash +
     ".json";
   if (await store.headObject(key)) {
-    return false;
+    return { added: false, visitorHash };
   }
-  await writeJson(store, key, { postId, visitorId, action, createdAt: new Date().toISOString() });
-  return true;
+  await writeJson(store, key, {
+    postId,
+    action,
+    visitorHash,
+    createdAt: new Date().toISOString(),
+  });
+  return { added: true, visitorHash };
 }
 
-export function isMediaKey(key: string) {
-  return key.startsWith(MEDIA_PREFIX + "/");
+export async function addInteraction(
+  postId: string,
+  visitorId: string,
+  action: "like" | "report",
+) {
+  return (await claimInteraction(postId, visitorId, action)).added;
 }
+
+export async function addReport(postId: string, visitorId: string, reason: string) {
+  const claim = await claimInteraction(postId, visitorId, "report");
+  if (!claim.added) {
+    return null;
+  }
+  const report: ReportRecord = {
+    id: crypto.randomUUID(),
+    postId,
+    reason: reason.trim().slice(0, 160),
+    createdAt: new Date().toISOString(),
+    status: "open",
+    visitorHash: claim.visitorHash,
+  };
+  await writeJson(getStorage(), reportKey(report.createdAt, report.id), report);
+  return report;
+}
+
+export { isMediaKey };

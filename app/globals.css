@@ -193,6 +193,15 @@ a {
   box-shadow: 0 12px 30px rgba(31, 41, 55, 0.11);
 }
 
+.notification-button {
+  color: #697386;
+}
+
+.notification-button.enabled {
+  color: #0d6b36;
+  background: rgba(52, 199, 89, 0.14);
+}
+
 .soft-button {
   gap: 8px;
   font-size: 13px;
@@ -727,13 +736,95 @@ a {
   font-weight: 800;
 }
 
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 28, 38, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dialog-card {
+  width: min(430px, 100%);
+  padding: 30px;
+  text-align: center;
+}
+
+.dialog-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  place-items: center;
+  border-radius: 16px;
+  color: #007aff;
+  background: rgba(0, 122, 255, 0.12);
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.dialog-icon.danger-icon {
+  color: #c62828;
+  background: rgba(255, 59, 48, 0.12);
+}
+
+.dialog-card h2 {
+  margin: 0;
+  letter-spacing: -0.045em;
+  font-size: 24px;
+}
+
+.dialog-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.dialog-actions .primary-button,
+.dialog-actions .soft-button {
+  min-height: 43px;
+}
+
+.dialog-textarea {
+  display: block;
+  width: 100%;
+  min-height: 112px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 15px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.48);
+  outline: 0;
+  resize: vertical;
+  text-align: left;
+  line-height: 1.6;
+}
+
+.dialog-textarea:focus {
+  border-color: rgba(0, 122, 255, 0.45);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+}
+
 .admin-page {
   display: grid;
   place-items: center;
 }
 
 .admin-shell {
-  width: min(760px, 100%);
+  width: min(900px, 100%);
 }
 
 .admin-card {
@@ -815,6 +906,14 @@ a {
   margin-bottom: 26px;
 }
 
+.management-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
 .management-head h1 {
   margin: 0;
   letter-spacing: -0.07em;
@@ -869,6 +968,103 @@ a {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.65;
+}
+
+.panel-heading-inline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-count {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #8c6300;
+  background: rgba(255, 204, 0, 0.16);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.report-empty {
+  margin-top: 16px;
+  padding: 28px 16px;
+  border: 1px dashed rgba(116, 116, 125, 0.24);
+  border-radius: 15px;
+  color: #929aa7;
+  text-align: center;
+  font-size: 12px;
+}
+
+.report-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.report-item {
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.report-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-item-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.report-item-head strong {
+  color: #8c6300;
+  font-size: 12px;
+}
+
+.report-item-head span,
+.report-id,
+.report-hint {
+  color: #929aa7;
+  font-size: 11px;
+}
+
+.report-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.report-reason,
+.report-target {
+  margin-top: 10px !important;
+  color: var(--ink) !important;
+  line-height: 1.55 !important;
+  word-break: break-word;
+}
+
+.report-target {
+  color: var(--muted) !important;
+}
+
+.report-hint {
+  margin-top: 8px !important;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.report-actions .soft-button {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 11px;
 }
 
 .management-fields {
@@ -989,6 +1185,10 @@ a {
     width: 100%;
   }
 
+  .dialog-actions {
+    flex-direction: column-reverse;
+  }
+
   .composer-bottom {
     align-items: stretch;
     flex-direction: column;
@@ -1010,6 +1210,12 @@ a {
 
   .management-head {
     flex-direction: column;
+  }
+
+  .management-head-actions,
+  .panel-heading-inline {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .management-fields,
@@ -1038,6 +1244,11 @@ a {
 .dark-mode .brand-mark {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .notification-button.enabled {
+  color: #8fe3a7;
+  background: rgba(52, 199, 89, 0.18);
 }
 
 .dark-mode .hero-card::after {
@@ -1079,4 +1290,14 @@ a {
 
 .dark-mode .primary-button {
   background: #0a84ff;
+}
+
+.dark-mode .dialog-textarea,
+.dark-mode .report-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark-mode .dialog-backdrop {
+  background: rgba(0, 0, 0, 0.52);
 }

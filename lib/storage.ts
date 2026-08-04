@@ -7,6 +7,18 @@ export const MEDIA_PREFIX = DATA_PREFIX + "/media";
 export const MAINTENANCE_KEY = DATA_PREFIX + "/system/maintenance.json";
 export const MIGRATION_KEY = DATA_PREFIX + "/system/migration.json";
 
+export const ALLOWED_MEDIA_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+]);
+
+const DEFAULT_MEDIA_MAX_BYTES = 512 * 1024 * 1024;
+
 export type StorageKind = "primary" | "migration";
 
 function configFromEnv(kind: StorageKind) {
@@ -111,6 +123,17 @@ export function safeFileExtension(name: string) {
   return match ? match[0] : "";
 }
 
+export function mediaMaxBytes() {
+  const configured = Number(process.env.MEDIA_MAX_BYTES);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : DEFAULT_MEDIA_MAX_BYTES;
+}
+
+export function isAllowedMediaType(type: string) {
+  return ALLOWED_MEDIA_TYPES.has(type);
+}
+
 export function primaryStorageError(error: unknown) {
   if (error instanceof Error) {
     return error.message.replace(
@@ -119,4 +142,8 @@ export function primaryStorageError(error: unknown) {
     );
   }
   return "存储服务暂时不可用";
+}
+
+export function isMediaKey(key: string) {
+  return /^flzx\/media\/\d{4}\/[0-9a-f-]{36}(?:\.[a-z0-9]{1,8})?$/i.test(key);
 }

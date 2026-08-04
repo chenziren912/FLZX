@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!hasStorage()) {
     return json({ error: "主 COS 尚未配置" }, { status: 503 });
   }
-  const body = (await request.json().catch(() => ({}))) as {
+  const body = ((await request.json().catch(() => ({}))) ?? {}) as {
     force?: boolean;
   };
   try {

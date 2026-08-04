@@ -1,6 +1,10 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
 import { sha256Hex } from "../../../../lib/s3";
-import { deletePost, getPost, listReplies } from "../../../../lib/wall-data";
+import { deletePost, getPost, listReplies, toPublicPost } from "../../../../lib/wall-data";
+
+function validPostId(id: string) {
+  return /^[a-zA-Z0-9_-]{1,120}$/.test(id);
+}
 
 export async function GET(
   request: Request,
@@ -11,12 +15,15 @@ export async function GET(
     return blocked;
   }
   const { id } = await params;
+  if (!validPostId(id)) {
+    return json({ error: "帖子编号无效" }, { status: 400 });
+  }
   try {
     const post = await getPost(id);
     if (!post) {
       return json({ error: "帖子不存在" }, { status: 404 });
     }
-    return json({ post, replies: await listReplies(id) });
+    return json({ post: toPublicPost(post), replies: await listReplies(id) });
   } catch (error) {
     return apiError(error);
   }
@@ -31,6 +38,9 @@ export async function DELETE(
     return blocked;
   }
   const { id } = await params;
+  if (!validPostId(id)) {
+    return json({ error: "帖子编号无效" }, { status: 400 });
+  }
   const body = await parseBody<{ deleteToken?: string }>(request);
   if (!body?.deleteToken) {
     return json({ error: "缺少删除凭证" }, { status: 400 });

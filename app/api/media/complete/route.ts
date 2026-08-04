@@ -1,7 +1,11 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
-import { getStorage, hasStorage } from "../../../../lib/storage";
-
-const maxBytes = Number(process.env.MEDIA_MAX_BYTES ?? 512 * 1024 * 1024);
+import {
+  getStorage,
+  hasStorage,
+  isAllowedMediaType,
+  isMediaKey,
+  mediaMaxBytes,
+} from "../../../../lib/storage";
 
 export async function POST(request: Request) {
   const blocked = await guardMaintenance();
@@ -16,7 +20,15 @@ export async function POST(request: Request) {
     name?: string;
     type?: string;
   }>(request);
-  if (!body?.key?.startsWith("flzx/media/") || !body.name || !body.type) {
+  if (
+    typeof body?.key !== "string" ||
+    !isMediaKey(body.key) ||
+    typeof body.name !== "string" ||
+    !body.name.trim() ||
+    body.name.length > 180 ||
+    typeof body.type !== "string" ||
+    !isAllowedMediaType(body.type)
+  ) {
     return json({ error: "媒体信息无效" }, { status: 400 });
   }
   try {
@@ -24,14 +36,18 @@ export async function POST(request: Request) {
     if (!object) {
       return json({ error: "没有找到已上传的文件" }, { status: 404 });
     }
-    if (object.contentLength > maxBytes) {
+    if (
+      object.contentLength <= 0 ||
+      object.contentLength > mediaMaxBytes() ||
+      object.contentType !== body.type
+    ) {
       await getStorage().deleteObject(body.key);
-      return json({ error: "文件超过大小限制" }, { status: 400 });
+      return json({ error: "文件类型或大小校验失败" }, { status: 400 });
     }
     return json({
       media: {
         key: body.key,
-        name: body.name.slice(0, 180),
+        name: body.name.trim().slice(0, 180),
         type: body.type,
         size: object.contentLength,
       },

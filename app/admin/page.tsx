@@ -24,6 +24,24 @@ type StatusResponse = {
   targetConfigured: boolean;
 };
 
+type ReportStatus = "open" | "resolved" | "dismissed";
+
+type ReportRecord = {
+  id: string;
+  postId: string;
+  reason: string;
+  createdAt: string;
+  status: ReportStatus;
+};
+
+type ReportedPost = {
+  id: string;
+  author: string;
+  content: string;
+  createdAt: string;
+  reports: number;
+};
+
 async function request<T>(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
   const data = (await response.json().catch(() => ({}))) as T & {
@@ -51,6 +69,29 @@ function stateLabel(status: MigrationState["status"]) {
   return "未开始";
 }
 
+function reportStatusLabel(status: ReportStatus) {
+  if (status === "resolved") {
+    return "已处理";
+  }
+  if (status === "dismissed") {
+    return "已驳回";
+  }
+  return "待审查";
+}
+
+function formatTime(value: string) {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
 export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
@@ -63,12 +104,22 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reports, setReports] = useState<ReportRecord[]>([]);
+  const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
 
-  async function refreshStatus() {
+  async function refreshAdminData() {
     try {
-      const data = await request<StatusResponse>("/api/admin/migration/status");
-      setStatus(data);
-      setSourceType(data.state.sourceType ?? data.sourceType);
+      const [statusData, reportData] = await Promise.all([
+        request<StatusResponse>("/api/admin/migration/status"),
+        request<{
+          reports: ReportRecord[];
+          reportedPosts: ReportedPost[];
+        }>("/api/admin/reports"),
+      ]);
+      setStatus(statusData);
+      setSourceType(statusData.state.sourceType ?? statusData.sourceType);
+      setReports(reportData.reports);
+      setReportedPosts(reportData.reportedPosts);
       setLoggedIn(true);
     } catch (caught) {
       const text = (caught as Error).message;
@@ -81,7 +132,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshStatus(), 0);
+    const timer = window.setTimeout(() => void refreshAdminData(), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -96,7 +147,7 @@ export default function AdminPage() {
         body: JSON.stringify({ password }),
       });
       setPassword("");
-      await refreshStatus();
+      await refreshAdminData();
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -121,7 +172,40 @@ export default function AdminPage() {
       if (successMessage) {
         setMessage(successMessage);
       }
-      await refreshStatus();
+      await refreshAdminData();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateReport(id: string, nextStatus: ReportStatus) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request("/api/admin/reports", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: nextStatus }),
+      });
+      setMessage("举报状态已更新。");
+      await refreshAdminData();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    setBusy(true);
+    try {
+      await request("/api/admin/logout", { method: "POST" });
+      setLoggedIn(false);
+      setReports([]);
+      setReportedPosts([]);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -180,9 +264,19 @@ export default function AdminPage() {
               <h1>服务器管理</h1>
               <p>迁移期间除了 admin 端点，其他端点会提示“服务器正在重启更新”。</p>
             </div>
-            <span className={"status-pill" + (isRunning ? " active" : "")}>
-              {stateLabel(migration?.status ?? "idle")}
-            </span>
+            <div className="management-head-actions">
+              <span className={"status-pill" + (isRunning ? " active" : "")}>
+                {stateLabel(migration?.status ?? "idle")}
+              </span>
+              <button
+                className="soft-button"
+                type="button"
+                onClick={() => void logout()}
+                disabled={busy}
+              >
+                退出登录
+              </button>
+            </div>
           </div>
 
           <div className="management-grid">
@@ -316,6 +410,96 @@ export default function AdminPage() {
               {error && <p className="error-note">{error}</p>}
             </section>
           </div>
+
+          <section className="management-panel reports-panel">
+            <div className="panel-heading-inline">
+              <div>
+                <h2>举报投诉</h2>
+                <p>用户提交的举报会在这里留痕；处理状态会持久化到主 COS。</p>
+              </div>
+              <span className="report-count">
+                {reports.filter((report) => report.status === "open").length} 条待审查
+              </span>
+            </div>
+            {reports.length === 0 && reportedPosts.length === 0 ? (
+              <div className="report-empty">目前没有举报记录。</div>
+            ) : (
+              <div className="report-list">
+                {reports.map((report) => {
+                  const post = reportedPosts.find((item) => item.id === report.postId);
+                  return (
+                    <article className="report-item" key={report.id}>
+                      <div className="report-item-head">
+                        <div>
+                          <strong>{reportStatusLabel(report.status)}</strong>
+                          <span>{formatTime(report.createdAt)}</span>
+                        </div>
+                        <span className="report-id">#{report.postId.slice(0, 8)}</span>
+                      </div>
+                      <p className="report-reason">
+                        {report.reason || "用户未填写具体举报原因"}
+                      </p>
+                      <p className="report-target">
+                        {post
+                          ? `${post.author}：${post.content}`
+                          : "关联帖子已删除，仍保留这条举报记录。"}
+                      </p>
+                      <div className="report-actions">
+                        {report.status === "open" ? (
+                          <>
+                            <button
+                              className="soft-button"
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void updateReport(report.id, "resolved")}
+                            >
+                              标记已处理
+                            </button>
+                            <button
+                              className="soft-button"
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void updateReport(report.id, "dismissed")}
+                            >
+                              标记误报
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void updateReport(report.id, "open")}
+                          >
+                            重新打开
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+                {reportedPosts
+                  .filter((post) => !reports.some((report) => report.postId === post.id))
+                  .map((post) => (
+                    <article className="report-item report-aggregate" key={post.id}>
+                      <div className="report-item-head">
+                        <div>
+                          <strong>历史举报汇总</strong>
+                          <span>{post.reports} 次举报</span>
+                        </div>
+                        <span className="report-id">#{post.id.slice(0, 8)}</span>
+                      </div>
+                      <p className="report-target">
+                        {post.author}：{post.content}
+                      </p>
+                      <p className="report-hint">
+                        这是迁移来的举报计数，旧服务器没有提供逐条投诉内容。
+                      </p>
+                    </article>
+                  ))}
+              </div>
+            )}
+          </section>
 
           <Link className="admin-back" href="/">
             返回主页

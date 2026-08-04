@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   if (unauthorized) {
     return unauthorized;
   }
-  const body = (await request.json().catch(() => ({}))) as {
+  const body = ((await request.json().catch(() => ({}))) ?? {}) as {
     batchSize?: number;
   };
   const batchSize = Math.max(1, Math.min(Number(body.batchSize) || 5, 20));

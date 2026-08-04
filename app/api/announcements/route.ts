@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     return json({ error: "服务器存储尚未配置" }, { status: 503 });
   }
   const body = await parseBody<{ content?: string }>(request);
-  const content = body?.content?.trim() ?? "";
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
   if (!content || content.length > 500) {
     return json({ error: "公告不能为空且不能超过 500 字" }, { status: 400 });
   }

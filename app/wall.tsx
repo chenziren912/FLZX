@@ -5,6 +5,7 @@ import {
   FormEvent,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -83,6 +84,15 @@ export default function Wall() {
   const [error, setError] = useState("");
   const [maintenance, setMaintenance] = useState(false);
   const [dark, setDark] = useState(false);
+  const [notificationPromptOpen, setNotificationPromptOpen] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState(
+    "正在申请消息权限，请同意",
+  );
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const notificationEnabledRef = useRef(false);
+  const knownPostIdsRef = useRef<Set<string> | null>(null);
 
   const loadPosts = useCallback(async (keyword = "") => {
     try {
@@ -106,6 +116,35 @@ export default function Wall() {
           ),
         })),
       );
+      if (!keyword) {
+        const nextIds = new Set(withMediaUrls.map((post) => post.id));
+        const previousIds = knownPostIdsRef.current;
+        if (
+          previousIds &&
+          notificationEnabledRef.current &&
+          typeof Notification !== "undefined" &&
+          Notification.permission === "granted"
+        ) {
+          const freshPosts = withMediaUrls.filter(
+            (post) => !previousIds.has(post.id),
+          );
+          if (freshPosts.length > 0) {
+            try {
+              const first = freshPosts[0];
+              new Notification("校园娱乐墙有新动态", {
+                body:
+                  freshPosts.length === 1
+                    ? `${first.author}：${first.content.slice(0, 80)}`
+                    : `又有 ${freshPosts.length} 条新动态，快来看看。`,
+                tag: "flzx-new-posts",
+              });
+            } catch {
+              // Notification can still fail when a browser revokes permission.
+            }
+          }
+        }
+        knownPostIdsRef.current = nextIds;
+      }
       setPosts(withMediaUrls);
       setMaintenance(false);
     } catch (caught) {
@@ -133,9 +172,39 @@ export default function Wall() {
   }, []);
 
   useEffect(() => {
+    if (typeof Notification === "undefined") {
+      return;
+    }
+    const granted = Notification.permission === "granted";
+    notificationEnabledRef.current = granted;
+    window.setTimeout(() => setNotificationEnabled(granted), 0);
+    if (
+      Notification.permission === "default" &&
+      window.localStorage.getItem("flzx-notification-granted") !== "1" &&
+      window.localStorage.getItem("flzx-notification-prompt-dismissed") !== "1"
+    ) {
+      const timer = window.setTimeout(() => setNotificationPromptOpen(true), 900);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    notificationEnabledRef.current = notificationEnabled;
+  }, [notificationEnabled]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void loadPosts(), 0);
     return () => window.clearTimeout(timer);
   }, [loadPosts]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!activeSearch && document.visibilityState === "visible") {
+        void loadPosts();
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [activeSearch, loadPosts]);
 
   function toggleTheme() {
     const next = !dark;
@@ -210,6 +279,9 @@ export default function Wall() {
           }),
         },
       );
+      if (!activeSearch && knownPostIdsRef.current) {
+        knownPostIdsRef.current.add(result.post.id);
+      }
       const tokens = JSON.parse(
         window.localStorage.getItem("flzx-delete-tokens") ?? "{}",
       ) as Record<string, string>;
@@ -236,14 +308,18 @@ export default function Wall() {
     }
   }
 
-  async function interact(postId: string, action: "like" | "report") {
+  async function interact(
+    postId: string,
+    action: "like" | "report",
+    reason = "",
+  ) {
     try {
-      const result = await readJson<{ post: Post }>(
+      const result = await readJson<{ post: Post; action: "added" | "unchanged" }>(
         "/api/posts/" + postId + "/interact",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, visitorId: visitorId() }),
+          body: JSON.stringify({ action, reason, visitorId: visitorId() }),
         },
       );
       setPosts((current) =>
@@ -252,10 +328,75 @@ export default function Wall() {
         ),
       );
       if (action === "report") {
-        setStatus("举报成功，已通知管理员审查");
+        setStatus(
+          result.action === "added"
+            ? "举报已提交，管理员会尽快审查。"
+            : "你已经举报过这条内容。",
+        );
       }
+      return true;
     } catch (caught) {
       setError((caught as Error).message);
+      return false;
+    }
+  }
+
+  function openNotificationPrompt() {
+    setNotificationMessage("正在申请消息权限，请同意");
+    setNotificationPromptOpen(true);
+  }
+
+  function dismissNotificationPrompt() {
+    window.localStorage.setItem("flzx-notification-prompt-dismissed", "1");
+    setNotificationPromptOpen(false);
+  }
+
+  async function requestNotifications() {
+    if (typeof Notification === "undefined") {
+      setNotificationMessage("当前浏览器不支持消息通知。");
+      return;
+    }
+    if (Notification.permission === "granted") {
+      window.localStorage.setItem("flzx-notification-granted", "1");
+      notificationEnabledRef.current = true;
+      setNotificationEnabled(true);
+      setNotificationPromptOpen(false);
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setNotificationMessage("浏览器已拒绝通知，请在站点设置中重新允许。");
+      window.localStorage.setItem("flzx-notification-prompt-dismissed", "1");
+      return;
+    }
+    setNotificationMessage("正在申请消息权限，请同意");
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        window.localStorage.setItem("flzx-notification-granted", "1");
+        window.localStorage.removeItem("flzx-notification-prompt-dismissed");
+        notificationEnabledRef.current = true;
+        setNotificationEnabled(true);
+        setNotificationPromptOpen(false);
+        setStatus("消息通知已开启；页面打开时会提醒新的动态。 ");
+      } else if (permission === "denied") {
+        window.localStorage.setItem("flzx-notification-prompt-dismissed", "1");
+        setNotificationMessage("浏览器已拒绝通知，请在站点设置中重新允许。");
+      } else {
+        setNotificationMessage("尚未完成授权，可以稍后再次开启。");
+      }
+    } catch {
+      setNotificationMessage("消息权限申请失败，可以稍后重试。");
+    }
+  }
+
+  async function submitReport() {
+    if (!reportingPostId) {
+      return;
+    }
+    const success = await interact(reportingPostId, "report", reportReason.trim());
+    if (success) {
+      setReportingPostId(null);
+      setReportReason("");
     }
   }
 
@@ -310,6 +451,16 @@ export default function Wall() {
           </Link>
           <div className="topbar-actions">
             <button
+              className={"icon-button notification-button" + (notificationEnabled ? " enabled" : "")}
+              type="button"
+              onClick={openNotificationPrompt}
+              title={notificationEnabled ? "消息通知已开启" : "开启消息通知"}
+              aria-label={notificationEnabled ? "消息通知已开启" : "开启消息通知"}
+              aria-pressed={notificationEnabled}
+            >
+              {notificationEnabled ? "●" : "♧"}
+            </button>
+            <button
               className="icon-button"
               type="button"
               onClick={toggleTheme}
@@ -330,7 +481,7 @@ export default function Wall() {
                   <img src="/tieyi-logo.png" alt="西安铁一中校标" />
                 </span>
                 <div className="hero-brand-copy">
-                  <span className="hero-overline">XI'AN TIEYI HIGH SCHOOL</span>
+                  <span className="hero-overline">XI&apos;AN TIEYI HIGH SCHOOL</span>
                   <div className="hero-label">校园娱乐墙</div>
                 </div>
               </div>
@@ -483,7 +634,10 @@ export default function Wall() {
                     <button
                       className="post-action danger"
                       type="button"
-                      onClick={() => void interact(post.id, "report")}
+                      onClick={() => {
+                        setReportReason("");
+                        setReportingPostId(post.id);
+                      }}
                     >
                       举报
                     </button>
@@ -502,6 +656,90 @@ export default function Wall() {
         </section>
 
       </div>
+      {notificationPromptOpen && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              dismissNotificationPrompt();
+            }
+          }}
+        >
+          <section
+            className="glass-card dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notification-dialog-title"
+          >
+            <div className="dialog-icon">♧</div>
+            <h2 id="notification-dialog-title">开启消息通知</h2>
+            <p>{notificationMessage}</p>
+            <div className="dialog-actions">
+              <button
+                className="soft-button"
+                type="button"
+                onClick={dismissNotificationPrompt}
+              >
+                稍后再说
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void requestNotifications()}
+              >
+                同意并开启
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {reportingPostId && (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setReportingPostId(null);
+            }
+          }}
+        >
+          <section
+            className="glass-card dialog-card report-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-dialog-title"
+          >
+            <div className="dialog-icon danger-icon">!</div>
+            <h2 id="report-dialog-title">举报这条内容</h2>
+            <p>请填写举报原因，便于管理员快速处理（最多 160 字）。</p>
+            <textarea
+              className="dialog-textarea"
+              value={reportReason}
+              onChange={(event) => setReportReason(event.target.value)}
+              maxLength={160}
+              placeholder="例如：广告、骚扰、与校园墙无关……"
+              autoFocus
+            />
+            <div className="dialog-actions">
+              <button
+                className="soft-button"
+                type="button"
+                onClick={() => setReportingPostId(null)}
+              >
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void submitReport()}
+              >
+                提交举报
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

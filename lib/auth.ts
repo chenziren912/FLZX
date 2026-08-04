@@ -19,8 +19,27 @@ function decode(value: string) {
   return atob(value.replace(/-/g, "+").replace(/_/g, "/"));
 }
 
+async function constantTimeEqual(left: string, right: string) {
+  const [leftHash, rightHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(left)),
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(right)),
+  ]);
+  const leftBytes = new Uint8Array(leftHash);
+  const rightBytes = new Uint8Array(rightHash);
+  let difference = 0;
+  for (let index = 0; index < leftBytes.length; index += 1) {
+    difference |= leftBytes[index] ^ rightBytes[index];
+  }
+  return difference === 0;
+}
+
 export function hasAdminConfig() {
   return Boolean(process.env.ADMIN_PASSWORD && secret());
+}
+
+export async function verifyAdminPassword(candidate: string) {
+  const expected = process.env.ADMIN_PASSWORD;
+  return Boolean(expected && (await constantTimeEqual(candidate, expected)));
 }
 
 export async function createAdminToken() {
@@ -43,7 +62,7 @@ export async function isAdminTokenValid(token: string | undefined) {
     return false;
   }
   const expected = await hmacBase64Url(secret(), payload);
-  if (expected !== signature) {
+  if (!(await constantTimeEqual(expected, signature))) {
     return false;
   }
   try {

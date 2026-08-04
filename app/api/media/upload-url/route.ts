@@ -1,16 +1,12 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
-import { safeFileExtension, getStorage, hasStorage, MEDIA_PREFIX } from "../../../../lib/storage";
-
-const allowedTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "video/webm",
-  "video/quicktime",
-]);
-const maxBytes = Number(process.env.MEDIA_MAX_BYTES ?? 512 * 1024 * 1024);
+import {
+  getStorage,
+  hasStorage,
+  isAllowedMediaType,
+  mediaMaxBytes,
+  MEDIA_PREFIX,
+  safeFileExtension,
+} from "../../../../lib/storage";
 
 export async function POST(request: Request) {
   const blocked = await guardMaintenance();
@@ -25,22 +21,22 @@ export async function POST(request: Request) {
     type?: string;
     size?: number;
   }>(request);
-  const name = body?.name?.trim() ?? "";
-  const type = body?.type?.trim() ?? "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const type = typeof body?.type === "string" ? body.type.trim() : "";
   const size = Number(body?.size);
   if (
     !name ||
     name.length > 180 ||
-    !allowedTypes.has(type) ||
+    !isAllowedMediaType(type) ||
     !Number.isFinite(size) ||
     size <= 0 ||
-    size > maxBytes
+    size > mediaMaxBytes()
   ) {
     return json(
       {
         error:
           "文件类型或大小不符合要求，当前最多 " +
-          Math.round(maxBytes / 1024 / 1024) +
+          Math.round(mediaMaxBytes() / 1024 / 1024) +
           " MB",
       },
       { status: 400 },
@@ -54,7 +50,9 @@ export async function POST(request: Request) {
     crypto.randomUUID() +
     safeFileExtension(name);
   try {
-    const uploadUrl = await getStorage().presign("PUT", key, 900);
+    const uploadUrl = await getStorage().presign("PUT", key, 900, {
+      "content-type": type,
+    });
     return json({
       uploadUrl,
       key,

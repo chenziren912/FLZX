@@ -11,4 +11,6 @@ test("Next output and campus wall shell are present", async () => {
   assert.match(layout, /西安铁一中 - 校园娱乐墙/);
   assert.match(wall, /发表你的想法/);
   assert.match(wall, /服务器正在重启更新/);
+  assert.match(wall, /正在申请消息权限，请同意/);
+  assert.match(wall, /开启消息通知/);
 });

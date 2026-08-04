@@ -277,23 +277,36 @@ export class S3CompatibleStore {
     method: "GET" | "PUT",
     key: string,
     expiresInSeconds = 900,
+    headers: HeadersInit = {},
   ) {
     const url = this.objectUrl(key);
     const requestDate = amzDate();
     const shortDate = dateStamp(requestDate);
     const scope =
       shortDate + "/" + this.region + "/s3/aws4_request";
+    const signedHeaders = new Headers(headers);
+    signedHeaders.set("host", url.host);
+    const signedHeaderNames = Array.from(signedHeaders.keys())
+      .map((name) => name.toLowerCase())
+      .sort();
+    const canonicalHeaders =
+      signedHeaderNames
+        .map(
+          (name) =>
+            name + ":" + canonicalHeaderValue(signedHeaders.get(name) ?? ""),
+        )
+        .join("\n") + "\n";
     url.searchParams.set("X-Amz-Algorithm", "AWS4-HMAC-SHA256");
     url.searchParams.set("X-Amz-Credential", this.accessKeyId + "/" + scope);
     url.searchParams.set("X-Amz-Date", requestDate);
     url.searchParams.set("X-Amz-Expires", String(expiresInSeconds));
-    url.searchParams.set("X-Amz-SignedHeaders", "host");
+    url.searchParams.set("X-Amz-SignedHeaders", signedHeaderNames.join(";"));
     const canonicalRequest = [
       method,
       url.pathname,
       canonicalQuery(url.searchParams),
-      "host:" + url.host + "\n",
-      "host",
+      canonicalHeaders,
+      signedHeaderNames.join(";"),
       "UNSIGNED-PAYLOAD",
     ].join("\n");
     const stringToSign = [

@@ -1,5 +1,5 @@
 import { apiError, json, requireAdmin } from "../../../../lib/api";
-import { listPosts } from "../../../../lib/wall-data";
+import { listPosts, toPublicPost } from "../../../../lib/wall-data";
 
 export async function GET(request: Request) {
   const unauthorized = await requireAdmin(request);
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     return unauthorized;
   }
   try {
-    return json({ posts: await listPosts() });
+    return json({ posts: (await listPosts()).map(toPublicPost) });
   } catch (error) {
     return apiError(error);
   }

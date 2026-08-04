@@ -1,7 +1,18 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../lib/api";
 import { sha256Hex } from "../../../lib/s3";
-import { getStorage, hasStorage } from "../../../lib/storage";
-import { isMediaKey, listPosts, PostRecord, savePost } from "../../../lib/wall-data";
+import {
+  getStorage,
+  hasStorage,
+  isAllowedMediaType,
+  isMediaKey,
+  mediaMaxBytes,
+} from "../../../lib/storage";
+import {
+  listPosts,
+  PostRecord,
+  savePost,
+  toPublicPost,
+} from "../../../lib/wall-data";
 
 type CreatePostBody = {
   author?: string;
@@ -27,7 +38,7 @@ export async function GET(request: Request) {
   try {
     const posts = await listPosts(search);
     return json({
-      posts,
+      posts: posts.map(toPublicPost),
       totalPages: 1,
       currentPage: 1,
       storageConfigured: hasStorage(),
@@ -46,9 +57,13 @@ export async function POST(request: Request) {
     return json({ error: "服务器存储尚未配置" }, { status: 503 });
   }
   const body = await parseBody<CreatePostBody>(request);
-  const content = body?.content?.trim() ?? "";
-  const author = body?.author?.trim() || "匿名同学";
-  const media = body?.media ?? [];
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
+  const author =
+    typeof body?.author === "string" ? body.author.trim() || "匿名同学" : "匿名同学";
+  if (body?.media !== undefined && !Array.isArray(body.media)) {
+    return json({ error: "媒体文件信息无效" }, { status: 400 });
+  }
+  const media = Array.isArray(body?.media) ? body.media : [];
   if (!content || content.length > 200) {
     return json({ error: "内容不能为空且不能超过 200 字" }, { status: 400 });
   }
@@ -61,12 +76,18 @@ export async function POST(request: Request) {
   if (
     media.some(
       (item) =>
+        !item ||
+        typeof item.key !== "string" ||
         !item.key ||
         !isMediaKey(item.key) ||
-        !item.name ||
-        !item.type ||
+        typeof item.name !== "string" ||
+        !item.name.trim() ||
+        item.name.trim().length > 180 ||
+        typeof item.type !== "string" ||
+        !isAllowedMediaType(item.type) ||
         !Number.isFinite(item.size) ||
-        Number(item.size) < 0,
+        Number(item.size) <= 0 ||
+        Number(item.size) > mediaMaxBytes(),
     )
   ) {
     return json({ error: "媒体文件信息无效" }, { status: 400 });
@@ -91,14 +112,25 @@ export async function POST(request: Request) {
   try {
     const store = getStorage();
     for (const item of post.media) {
-      if (!(await store.headObject(item.key))) {
+      const object = await store.headObject(item.key);
+      if (!object) {
         return json({ error: "媒体文件尚未上传完成" }, { status: 400 });
       }
+      if (
+        object.contentLength <= 0 ||
+        object.contentLength > mediaMaxBytes() ||
+        !isAllowedMediaType(object.contentType) ||
+        object.contentType !== item.type
+      ) {
+        return json({ error: "媒体文件类型或大小校验失败" }, { status: 400 });
+      }
+      item.size = object.contentLength;
+      item.type = object.contentType;
     }
     await savePost(post);
     return json({
       success: true,
-      post,
+      post: toPublicPost(post),
       deleteToken,
     });
   } catch (error) {

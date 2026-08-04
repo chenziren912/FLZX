@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const body = (await request.json().catch(() => ({}))) as {
+  const body = ((await request.json().catch(() => ({}))) ?? {}) as {
     sourcePrefix?: string;
     targetPrefix?: string;
     sourceType?: "legacy_api" | "s3";
@@ -47,11 +47,14 @@ export async function POST(request: Request) {
       status: "running",
       sourceType,
       startedAt: new Date().toISOString(),
-      sourcePrefix: body.sourcePrefix?.trim() ?? "",
+      sourcePrefix:
+        typeof body.sourcePrefix === "string"
+          ? body.sourcePrefix.trim().slice(0, 240)
+          : "",
       targetPrefix:
-        body.targetPrefix?.trim() ??
-        process.env.MIGRATION_TARGET_PREFIX ??
-        "",
+        typeof body.targetPrefix === "string"
+          ? body.targetPrefix.trim().slice(0, 240)
+          : (process.env.MIGRATION_TARGET_PREFIX ?? "").slice(0, 240),
       sourceCursor: null,
       sourcePage: sourceType === "legacy_api" ? 1 : undefined,
       maintenance: true,

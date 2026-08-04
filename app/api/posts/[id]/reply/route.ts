@@ -15,9 +15,12 @@ export async function POST(
   }
   const { id } = await params;
   const body = await parseBody<{ author?: string; content?: string }>(request);
-  const content = body?.content?.trim() ?? "";
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
   if (!content || content.length > 200) {
     return json({ error: "回复不能为空且不能超过 200 字" }, { status: 400 });
+  }
+  if (body?.author !== undefined && typeof body.author !== "string") {
+    return json({ error: "昵称格式无效" }, { status: 400 });
   }
   try {
     if (!(await getPost(id))) {
