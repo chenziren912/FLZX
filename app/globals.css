@@ -958,6 +958,398 @@ a {
   line-height: 1.5;
 }
 
+.card-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.markdown-mode-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(89, 107, 255, 0.22);
+  border-radius: 11px;
+  color: #5264e8;
+  background: rgba(89, 107, 255, 0.08);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.markdown-mode-button:hover,
+.markdown-mode-button.active {
+  border-color: rgba(89, 107, 255, 0.36);
+  color: #4354e8;
+  background: rgba(89, 107, 255, 0.14);
+}
+
+.markdown-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.markdown-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  overflow: auto;
+  padding: 18px;
+  background: rgba(24, 31, 45, 0.34);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.markdown-editor-shell {
+  display: flex;
+  width: min(1440px, 100%);
+  height: min(900px, 100%);
+  min-height: 620px;
+  margin: auto;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 28px;
+  background: rgba(248, 250, 253, 0.92);
+  box-shadow: 0 30px 100px rgba(25, 33, 50, 0.24);
+}
+
+.markdown-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid rgba(136, 148, 169, 0.18);
+}
+
+.markdown-editor-kicker {
+  display: block;
+  margin-bottom: 6px;
+  color: #6474ea;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.markdown-editor-header h2 {
+  margin: 0;
+  color: #1d2433;
+  letter-spacing: -0.04em;
+  font-size: clamp(22px, 3vw, 30px);
+}
+
+.markdown-editor-header p {
+  margin: 6px 0 0;
+  color: #7d8798;
+  font-size: 12px;
+}
+
+.markdown-editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.markdown-editor-header-actions .primary-button,
+.markdown-editor-header-actions .soft-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.markdown-character-count {
+  color: #7d8798;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.markdown-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 26px;
+  border-bottom: 1px solid rgba(136, 148, 169, 0.15);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.markdown-toolbar-label {
+  margin-right: 3px;
+  color: #929aa7;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.markdown-toolbar button {
+  min-width: 32px;
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid rgba(136, 148, 169, 0.18);
+  border-radius: 9px;
+  color: #596579;
+  background: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.markdown-toolbar button:hover {
+  border-color: rgba(89, 107, 255, 0.28);
+  color: #4354e8;
+  background: rgba(89, 107, 255, 0.09);
+}
+
+.markdown-editor-workspace {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.markdown-editor-pane,
+.markdown-preview-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.markdown-editor-pane {
+  border-right: 1px solid rgba(136, 148, 169, 0.18);
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.markdown-preview-pane {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.markdown-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(136, 148, 169, 0.13);
+  color: #4e596c;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.markdown-pane-header small {
+  color: #9aa2ae;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.markdown-editor-input {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  padding: 26px 28px 50px;
+  border: 0;
+  outline: 0;
+  color: #293244;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.85;
+  resize: none;
+  tab-size: 4;
+}
+
+.markdown-editor-input::selection {
+  background: rgba(89, 107, 255, 0.2);
+}
+
+.markdown-preview-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.markdown-body {
+  min-height: 100%;
+  padding: 28px clamp(22px, 4vw, 48px) 70px;
+  color: #30394b;
+  overflow-wrap: break-word;
+  font-size: 14px;
+  line-height: 1.78;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0 !important;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: #171d29;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
+}
+
+.markdown-body h1 {
+  margin: 0 0 22px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e6e8ed;
+  font-size: clamp(25px, 4vw, 38px);
+}
+
+.markdown-body h2 {
+  margin: 31px 0 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #edf0f3;
+  font-size: 24px;
+}
+
+.markdown-body h3 {
+  margin: 25px 0 9px;
+  font-size: 19px;
+}
+
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 20px 0 7px;
+  font-size: 16px;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre,
+.markdown-body table,
+.markdown-body hr {
+  margin-top: 0;
+  margin-bottom: 17px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.55em;
+}
+
+.markdown-body li + li {
+  margin-top: 5px;
+}
+
+.markdown-body blockquote {
+  padding: 8px 16px;
+  border-left: 3px solid #596bff;
+  color: #69758a;
+  background: rgba(89, 107, 255, 0.07);
+}
+
+.markdown-body a {
+  color: #4354e8;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(67, 84, 232, 0.28);
+}
+
+.markdown-body a:hover {
+  border-bottom-color: currentColor;
+}
+
+.markdown-body code {
+  padding: 0.16em 0.4em;
+  border-radius: 6px;
+  color: #bf3e68;
+  background: #f2f0f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.markdown-body pre {
+  overflow: auto;
+  padding: 15px 17px;
+  border-radius: 13px;
+  color: #eaf0ff;
+  background: #171b25;
+  box-shadow: 0 10px 22px rgba(31, 38, 51, 0.1);
+}
+
+.markdown-body pre code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid #e4e7ed;
+  border-radius: 10px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 10px;
+  border: 1px solid #e4e7ed;
+  text-align: left;
+}
+
+.markdown-body th {
+  color: #3e4a61;
+  background: #f4f6fa;
+  font-weight: 800;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid #e5e8ee;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 12px;
+}
+
+.markdown-empty {
+  margin: 0;
+  color: #98a1af;
+  font-size: 12px;
+}
+
+.markdown-post-content {
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown-post-content h1,
+.markdown-post-content h2,
+.markdown-post-content h3,
+.markdown-post-content h4,
+.markdown-post-content h5,
+.markdown-post-content h6 {
+  color: var(--ink);
+}
+
+.markdown-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 26px;
+  color: #929aa7;
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+}
+
 .maintenance-banner {
   position: fixed;
   inset: 18px 18px auto;
@@ -1390,6 +1782,25 @@ a {
   .hero-card {
     min-height: 420px;
   }
+
+  .markdown-editor-shell {
+    min-height: 0;
+  }
+
+  .markdown-editor-workspace {
+    overflow: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .markdown-editor-pane {
+    min-height: 330px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(136, 148, 169, 0.18);
+  }
+
+  .markdown-preview-pane {
+    min-height: 330px;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1410,6 +1821,16 @@ a {
   .composer-card {
     border-radius: 23px;
     padding: 24px;
+  }
+
+  .card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .card-heading-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .hero-heading {
@@ -1472,6 +1893,54 @@ a {
   .management-fields,
   .migration-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .markdown-editor-overlay {
+    padding: 0;
+  }
+
+  .markdown-editor-shell {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .markdown-editor-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .markdown-editor-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .markdown-editor-header-actions .primary-button {
+    width: auto;
+  }
+
+  .markdown-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 9px 18px;
+  }
+
+  .markdown-toolbar button {
+    flex: 0 0 auto;
+  }
+
+  .markdown-editor-input {
+    padding: 20px 18px 38px;
+  }
+
+  .markdown-editor-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 18px;
   }
 }
 
@@ -1554,6 +2023,91 @@ a {
 
 .dark-mode .upload-progress-meta {
   color: #aab3c0;
+}
+
+.dark-mode .markdown-editor-shell {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(28, 30, 37, 0.96);
+}
+
+.dark-mode .markdown-editor-header,
+.dark-mode .markdown-toolbar,
+.dark-mode .markdown-editor-footer,
+.dark-mode .markdown-pane-header,
+.dark-mode .markdown-editor-pane {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .markdown-editor-header,
+.dark-mode .markdown-toolbar,
+.dark-mode .markdown-editor-footer {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dark-mode .markdown-editor-header h2,
+.dark-mode .markdown-pane-header,
+.dark-mode .markdown-body h1,
+.dark-mode .markdown-body h2,
+.dark-mode .markdown-body h3,
+.dark-mode .markdown-body h4,
+.dark-mode .markdown-body h5,
+.dark-mode .markdown-body h6,
+.dark-mode .markdown-post-content h1,
+.dark-mode .markdown-post-content h2,
+.dark-mode .markdown-post-content h3 {
+  color: #f5f5f7;
+}
+
+.dark-mode .markdown-editor-header p,
+.dark-mode .markdown-pane-header small,
+.dark-mode .markdown-toolbar-label,
+.dark-mode .markdown-editor-footer,
+.dark-mode .markdown-character-count {
+  color: #a5a7b0;
+}
+
+.dark-mode .markdown-toolbar button,
+.dark-mode .markdown-mode-button {
+  border-color: rgba(150, 160, 255, 0.24);
+  color: #bac1ff;
+  background: rgba(89, 107, 255, 0.12);
+}
+
+.dark-mode .markdown-editor-input {
+  color: #e7e9ef;
+}
+
+.dark-mode .markdown-preview-pane {
+  background: rgba(18, 20, 25, 0.72);
+}
+
+.dark-mode .markdown-body {
+  color: #d6d7dc;
+}
+
+.dark-mode .markdown-body h1,
+.dark-mode .markdown-body h2 {
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.dark-mode .markdown-body blockquote {
+  color: #b7bfce;
+  background: rgba(89, 107, 255, 0.13);
+}
+
+.dark-mode .markdown-body code {
+  color: #ffabc7;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.dark-mode .markdown-body th,
+.dark-mode .markdown-body td {
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.dark-mode .markdown-body th {
+  color: #e2e4ea;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .dark-mode .dialog-textarea,

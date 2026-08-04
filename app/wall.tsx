@@ -3,12 +3,14 @@
 import {
   ChangeEvent,
   FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 import Link from "next/link";
+import MarkdownPreview from "./markdown-preview";
 
 type Media = {
   key: string;
@@ -26,6 +28,7 @@ type Post = {
   media: Media[];
   likes: number;
   reports: number;
+  format?: "plain" | "markdown";
 };
 
 type Reply = {
@@ -188,6 +191,10 @@ export default function Wall() {
   const [activeSearch, setActiveSearch] = useState("");
   const [author, setAuthor] = useState("");
   const [content, setContent] = useState("");
+  const [contentFormat, setContentFormat] = useState<"plain" | "markdown">(
+    "plain",
+  );
+  const [markdownModeOpen, setMarkdownModeOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -212,6 +219,7 @@ export default function Wall() {
   const [replyBusyPostId, setReplyBusyPostId] = useState<string | null>(null);
   const notificationEnabledRef = useRef(false);
   const knownPostIdsRef = useRef<Set<string> | null>(null);
+  const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const loadPosts = useCallback(async (keyword = "") => {
     try {
@@ -289,6 +297,24 @@ export default function Wall() {
     // still keeping the server-rendered markup hydration-safe.
     window.setTimeout(() => setDark(isDark), 0);
   }, []);
+
+  useEffect(() => {
+    if (!markdownModeOpen) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMarkdownModeOpen(false);
+      }
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [markdownModeOpen]);
 
   useEffect(() => {
     if (typeof Notification === "undefined") {
@@ -442,6 +468,7 @@ export default function Wall() {
           body: JSON.stringify({
             author,
             content,
+            format: contentFormat,
             media,
           }),
         },
@@ -456,6 +483,7 @@ export default function Wall() {
       window.localStorage.setItem("flzx-delete-tokens", JSON.stringify(tokens));
       setContent("");
       setAuthor("");
+      setContentFormat("plain");
       setFiles([]);
       setUploadProgress([]);
       setStatus("");
@@ -663,6 +691,51 @@ export default function Wall() {
     void loadPosts(search.trim());
   }
 
+  function openMarkdownEditor() {
+    if (busy) {
+      return;
+    }
+    setContentFormat("markdown");
+    setMarkdownModeOpen(true);
+  }
+
+  function insertMarkdown(before: string, after = "", placeholder = "文本") {
+    const input = markdownInputRef.current;
+    if (!input) {
+      return;
+    }
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selected = content.slice(start, end) || placeholder;
+    const nextContent =
+      content.slice(0, start) + before + selected + after + content.slice(end);
+    setContent(nextContent.slice(0, 200));
+    window.requestAnimationFrame(() => {
+      input.focus();
+      const selectionStart = Math.min(start + before.length, 200);
+      const selectionEnd = Math.min(
+        selectionStart + selected.length,
+        nextContent.length,
+        200,
+      );
+      input.setSelectionRange(selectionStart, selectionEnd);
+    });
+  }
+
+  function handleMarkdownKeyDown(
+    event: ReactKeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      insertMarkdown("    ", "", "");
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+      event.preventDefault();
+      insertMarkdown("**", "**", "加粗文本");
+    }
+  }
+
   const totalUploadPercent = overallUploadPercent(uploadProgress);
 
   return (
@@ -752,7 +825,22 @@ export default function Wall() {
           <section className="glass-card composer-card">
             <div className="card-heading">
               <h2>发表你的想法</h2>
-              <span>最多 200 字</span>
+              <div className="card-heading-actions">
+                <span>最多 200 字</span>
+                <button
+                  className={
+                    "markdown-mode-button" +
+                    (contentFormat === "markdown" ? " active" : "")
+                  }
+                  type="button"
+                  onClick={openMarkdownEditor}
+                  disabled={busy}
+                >
+                  {contentFormat === "markdown"
+                    ? "Markdown 已启用"
+                    : "Markdown模式"}
+                </button>
+              </div>
             </div>
             <form className="compose-form" onSubmit={publish}>
               <input
@@ -766,7 +854,11 @@ export default function Wall() {
                 className="form-textarea"
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
-                placeholder="今天有什么新鲜事？"
+                placeholder={
+                  contentFormat === "markdown"
+                    ? "Markdown 模式已启用，可点击右上角进入全屏编辑…"
+                    : "今天有什么新鲜事？"
+                }
                 maxLength={200}
                 required
               />
@@ -902,7 +994,14 @@ export default function Wall() {
                       <span>{formatTime(post.createdAt)}</span>
                     </div>
                   </div>
-                  <div className="post-content">{post.content}</div>
+                  {post.format === "markdown" ? (
+                    <MarkdownPreview
+                      source={post.content}
+                      className="post-content markdown-post-content"
+                    />
+                  ) : (
+                    <div className="post-content">{post.content}</div>
+                  )}
                   {post.media.length > 0 && (
                     <div className="media-grid">
                       {post.media.map((media) =>
@@ -1055,6 +1154,144 @@ export default function Wall() {
         </section>
 
       </div>
+      {markdownModeOpen && (
+        <div className="markdown-editor-overlay">
+          <section
+            className="markdown-editor-shell"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="markdown-editor-title"
+          >
+            <header className="markdown-editor-header">
+              <div>
+                <span className="markdown-editor-kicker">COMPOSE / MARKDOWN</span>
+                <h2 id="markdown-editor-title">Markdown 发帖</h2>
+                <p>左侧自由书写，右侧实时预览你的校园墙内容。</p>
+              </div>
+              <div className="markdown-editor-header-actions">
+                <span className="markdown-character-count">{content.length}/200</span>
+                <button
+                  className="soft-button"
+                  type="button"
+                  onClick={() => setMarkdownModeOpen(false)}
+                >
+                  返回发帖
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setMarkdownModeOpen(false)}
+                >
+                  完成编辑
+                </button>
+              </div>
+            </header>
+            <div className="markdown-toolbar" aria-label="Markdown 快捷格式">
+              <span className="markdown-toolbar-label">快捷插入</span>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("# ", "", "标题")}
+              >
+                H1
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("## ", "", "小标题")}
+              >
+                H2
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("**", "**", "加粗文本")}
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("*", "*", "斜体文本")}
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("> ", "", "引用内容")}
+              >
+                引用
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("- ", "", "列表项")}
+              >
+                列表
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("`", "`", "代码")}
+              >
+                代码
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMarkdown("```\n", "\n```", "代码块")}
+              >
+                代码块
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  insertMarkdown("[", "](https://example.com)", "链接文字")
+                }
+              >
+                链接
+              </button>
+            </div>
+            <div className="markdown-editor-workspace">
+              <section className="markdown-editor-pane">
+                <div className="markdown-pane-header">
+                  <span>编辑器</span>
+                  <small>Markdown</small>
+                </div>
+                <textarea
+                  ref={markdownInputRef}
+                  className="markdown-editor-input"
+                  value={content}
+                  onChange={(event) => setContent(event.target.value)}
+                  onKeyDown={handleMarkdownKeyDown}
+                  placeholder="# 写下你的想法\n\n支持标题、列表、引用、代码和链接…"
+                  maxLength={200}
+                  autoFocus
+                  spellCheck="false"
+                />
+              </section>
+              <section className="markdown-preview-pane">
+                <div className="markdown-pane-header">
+                  <span>实时预览</span>
+                  <small>安全渲染</small>
+                </div>
+                <div className="markdown-preview-scroll">
+                  <MarkdownPreview
+                    source={content}
+                    emptyText="开始输入 Markdown，右侧会立即显示预览。"
+                  />
+                </div>
+              </section>
+            </div>
+            <footer className="markdown-editor-footer">
+              <span>支持 # 标题、**加粗**、列表、引用、代码块、链接和表格</span>
+              <span>按 Esc 返回发帖</span>
+            </footer>
+          </section>
+        </div>
+      )}
       {notificationPromptOpen && (
         <div
           className="dialog-backdrop"

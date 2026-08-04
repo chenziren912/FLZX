@@ -26,6 +26,7 @@ export type PostRecord = {
   media: MediaRecord[];
   likes: number;
   reports: number;
+  format?: "plain" | "markdown";
 };
 
 export type ReplyRecord = {

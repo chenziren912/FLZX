@@ -17,6 +17,7 @@ import {
 type CreatePostBody = {
   author?: string;
   content?: string;
+  format?: "plain" | "markdown";
   media?: Array<{
     key?: string;
     name?: string;
@@ -60,6 +61,10 @@ export async function POST(request: Request) {
   const content = typeof body?.content === "string" ? body.content.trim() : "";
   const author =
     typeof body?.author === "string" ? body.author.trim() || "匿名同学" : "匿名同学";
+  if (body?.format !== undefined && body.format !== "plain" && body.format !== "markdown") {
+    return json({ error: "内容格式无效" }, { status: 400 });
+  }
+  const format = body?.format === "markdown" ? "markdown" : "plain";
   if (body?.media !== undefined && !Array.isArray(body.media)) {
     return json({ error: "媒体文件信息无效" }, { status: 400 });
   }
@@ -108,6 +113,7 @@ export async function POST(request: Request) {
     })),
     likes: 0,
     reports: 0,
+    format,
   };
   try {
     const store = getStorage();
