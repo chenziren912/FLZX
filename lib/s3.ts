@@ -364,6 +364,32 @@ export class S3CompatibleStore {
     });
   }
 
+  async putObjectIfAbsent(
+    key: string,
+    body: string | ArrayBuffer | Uint8Array,
+    contentType = "application/octet-stream",
+  ) {
+    const payload = typeof body === "string" ? body : body;
+    try {
+      await this.signedRequest("PUT", key, {
+        headers: {
+          "content-type": contentType,
+          "if-none-match": "*",
+        },
+        body: payload as BodyInit,
+      });
+      return true;
+    } catch (error) {
+      if (
+        error instanceof S3RequestError &&
+        (error.status === 409 || error.status === 412)
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async putObjectStream(
     key: string,
     body: ReadableStream<Uint8Array>,

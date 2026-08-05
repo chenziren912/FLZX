@@ -93,7 +93,11 @@ const PLAIN_CONTENT_LIMIT = 200;
 const MARKDOWN_CONTENT_LIMIT = 5000;
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
-  const response = await fetch(input, init);
+  const response = await fetch(input, {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...init,
+  });
   const body = (await response.json().catch(() => ({}))) as T & {
     error?: string;
     maintenance?: boolean;
@@ -253,6 +257,9 @@ export default function Wall() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const [replyBusyPostId, setReplyBusyPostId] = useState<string | null>(null);
+  const [interactionBusyPostIds, setInteractionBusyPostIds] = useState<
+    Record<string, boolean>
+  >({});
   const [loadingFullPostIds, setLoadingFullPostIds] = useState<
     Record<string, boolean>
   >({});
@@ -272,6 +279,7 @@ export default function Wall() {
   const preparedMediaRef = useRef<Media[] | null>(null);
   const captchaRetryRef = useRef<CaptchaRetry | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
+  const interactionBusyPostIdsRef = useRef<Set<string>>(new Set());
 
   function showActionFeedback(next: ActionFeedback) {
     if (feedbackTimerRef.current !== null) {
@@ -719,11 +727,22 @@ export default function Wall() {
     proof: CaptchaProof = {},
     fromCaptcha = false,
   ): Promise<ActionAttempt> {
-    if (action === "report" && !fromCaptcha) {
+    if (interactionBusyPostIdsRef.current.has(postId)) {
+      return "failed";
+    }
+    interactionBusyPostIdsRef.current.add(postId);
+    setInteractionBusyPostIds((current) => ({
+      ...current,
+      [postId]: true,
+    }));
+    if (!fromCaptcha) {
       showActionFeedback({
         kind: "loading",
-        title: "正在发送",
-        detail: "正在提交举报，请稍候。",
+        title: action === "like" ? "正在点赞" : "正在发送",
+        detail:
+          action === "like"
+            ? "正在记录你的点赞，请稍候。"
+            : "正在提交举报，请稍候。",
       });
     }
     try {
@@ -744,7 +763,16 @@ export default function Wall() {
           post.id === postId ? { ...post, ...result.post } : post,
         ),
       );
-      if (action === "report") {
+      if (action === "like") {
+        showActionFeedback({
+          kind: "success",
+          title: result.action === "added" ? "点赞成功" : "已经点过赞了",
+          detail:
+            result.action === "added"
+              ? "感谢你的支持。"
+              : "同一设备只能点赞一次。",
+        });
+      } else {
         setStatus(
           result.action === "added"
             ? "举报已提交，管理员会尽快审查。"
@@ -775,9 +803,16 @@ export default function Wall() {
       if (action === "report") {
         showSendFailure(requestError.message);
       } else {
-        setError(requestError.message);
+        showSendFailure(requestError.message);
       }
       return "failed";
+    } finally {
+      interactionBusyPostIdsRef.current.delete(postId);
+      setInteractionBusyPostIds((current) => {
+        const next = { ...current };
+        delete next[postId];
+        return next;
+      });
     }
   }
 
@@ -1434,9 +1469,12 @@ export default function Wall() {
                     <button
                       className="post-action"
                       type="button"
+                      disabled={Boolean(interactionBusyPostIds[post.id])}
                       onClick={() => void interact(post.id, "like")}
                     >
-                      ♡ {post.likes}
+                      {interactionBusyPostIds[post.id]
+                        ? "正在点赞…"
+                        : `♡ ${post.likes}`}
                     </button>
                     <button
                       className="post-action"

@@ -101,7 +101,11 @@ export function deviceJson(
   data: unknown,
   init: ResponseInit = {},
 ) {
-  return withDeviceCookie(request, json(data, init));
+  const headers = new Headers(init.headers);
+  if (!headers.has("Cache-Control")) {
+    headers.set("Cache-Control", "no-store");
+  }
+  return withDeviceCookie(request, json(data, { ...init, headers }));
 }
 
 function randomInt(maximum: number) {

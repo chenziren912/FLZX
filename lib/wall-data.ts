@@ -275,16 +275,17 @@ async function claimInteraction(
     "_" +
     visitorHash +
     ".json";
-  if (await store.headObject(key)) {
-    return { added: false, visitorHash };
-  }
-  await writeJson(store, key, {
-    postId,
-    action,
-    visitorHash,
-    createdAt: new Date().toISOString(),
-  });
-  return { added: true, visitorHash };
+  const added = await store.putObjectIfAbsent(
+    key,
+    JSON.stringify({
+      postId,
+      action,
+      visitorHash,
+      createdAt: new Date().toISOString(),
+    }),
+    "application/json; charset=utf-8",
+  );
+  return { added, visitorHash };
 }
 
 export async function addInteraction(
