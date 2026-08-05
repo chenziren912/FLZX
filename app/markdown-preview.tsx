@@ -1,7 +1,7 @@
 "use client";
 
 import { marked } from "marked";
-import { useDeferredValue, useEffect, useState } from "react";
+import { memo, useDeferredValue, useEffect, useState } from "react";
 
 type MarkdownPreviewProps = {
   source: string;
@@ -136,7 +136,7 @@ function getSanitizer() {
   return sanitizerPromise;
 }
 
-export default function MarkdownPreview({
+function MarkdownPreview({
   source,
   className = "",
   emptyText = "Markdown 内容会在这里实时预览。",
@@ -195,3 +195,7 @@ export default function MarkdownPreview({
     />
   );
 }
+
+// The wall polls for new posts periodically. Keep an unchanged preview, and
+// especially its YouTube iframe, mounted while that parent refreshes.
+export default memo(MarkdownPreview);
