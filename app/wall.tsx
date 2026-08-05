@@ -237,6 +237,7 @@ export default function Wall() {
   const [videoEmbedError, setVideoEmbedError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressItem[]>([]);
+  const [mediaUploadBusy, setMediaUploadBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -277,6 +278,9 @@ export default function Wall() {
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const videoEmbedInputRef = useRef<HTMLInputElement | null>(null);
   const preparedMediaRef = useRef<Media[] | null>(null);
+  const mediaUploadPromiseRef = useRef<Promise<Media[]> | null>(null);
+  const mediaUploadBusyRef = useRef(false);
+  const mediaUploadFailedRef = useRef(false);
   const captchaRetryRef = useRef<CaptchaRetry | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const interactionBusyPostIdsRef = useRef<Set<string>>(new Set());
@@ -541,16 +545,23 @@ export default function Wall() {
   }
 
   function handleFiles(event: ChangeEvent<HTMLInputElement>) {
-    if (busy) {
+    if (busy || mediaUploadBusyRef.current) {
+      event.target.value = "";
+      return;
+    }
+    const selected = Array.from(event.target.files ?? []);
+    const nextFiles = [...files, ...selected].slice(0, 6);
+    if (nextFiles.length === 0) {
       event.target.value = "";
       return;
     }
     preparedMediaRef.current = null;
-    const selected = Array.from(event.target.files ?? []);
-    const nextFiles = [...files, ...selected].slice(0, 6);
+    mediaUploadPromiseRef.current = null;
+    mediaUploadFailedRef.current = false;
     setFiles(nextFiles);
     setUploadProgress(nextFiles.map(createUploadProgressItem));
     event.target.value = "";
+    startMediaUpload(nextFiles);
   }
 
   function updateUploadProgress(
@@ -630,6 +641,35 @@ export default function Wall() {
     return uploaded;
   }
 
+  function startMediaUpload(filesToUpload: File[]) {
+    if (filesToUpload.length === 0) {
+      preparedMediaRef.current = [];
+      mediaUploadFailedRef.current = false;
+      return;
+    }
+    mediaUploadBusyRef.current = true;
+    mediaUploadFailedRef.current = false;
+    setMediaUploadBusy(true);
+    const uploadPromise = uploadFiles(filesToUpload)
+      .then((media) => {
+        preparedMediaRef.current = media;
+        setStatus("媒体已上传，可以发布。 ");
+        return media;
+      })
+      .catch((error) => {
+        preparedMediaRef.current = null;
+        mediaUploadFailedRef.current = true;
+        setStatus("媒体上传失败，请移除后重新选择文件。 ");
+        throw error;
+      })
+      .finally(() => {
+        mediaUploadBusyRef.current = false;
+        setMediaUploadBusy(false);
+      });
+    mediaUploadPromiseRef.current = uploadPromise;
+    void uploadPromise.catch(() => undefined);
+  }
+
   async function submitPost(
     proof: CaptchaProof = {},
     fromCaptcha = false,
@@ -645,12 +685,19 @@ export default function Wall() {
       });
     }
     const filesToUpload = files;
-    if (!preparedMediaRef.current) {
-      setUploadProgress(filesToUpload.map(createUploadProgressItem));
-    }
     try {
+      if (mediaUploadFailedRef.current) {
+        throw new Error("媒体上传失败，请移除失败文件后重新选择");
+      }
       const media =
-        preparedMediaRef.current ?? (await uploadFiles(filesToUpload));
+        filesToUpload.length === 0
+          ? []
+          : mediaUploadPromiseRef.current
+            ? await mediaUploadPromiseRef.current
+            : preparedMediaRef.current ?? [];
+      if (media.length !== filesToUpload.length) {
+        throw new Error("媒体尚未上传完成，请稍候再试");
+      }
       preparedMediaRef.current = media;
       setStatus("正在发布…");
       const result = await readJson<{ post: Post; deleteToken: string }>(
@@ -676,6 +723,8 @@ export default function Wall() {
       tokens[result.post.id] = result.deleteToken;
       window.localStorage.setItem("flzx-delete-tokens", JSON.stringify(tokens));
       preparedMediaRef.current = null;
+      mediaUploadPromiseRef.current = null;
+      mediaUploadFailedRef.current = false;
       setContent("");
       setAuthor("");
       setContentFormat("plain");
@@ -714,7 +763,7 @@ export default function Wall() {
 
   async function publish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!content.trim() || busy) {
+    if (!content.trim() || busy || mediaUploadBusyRef.current) {
       return;
     }
     await submitPost();
@@ -1314,15 +1363,22 @@ export default function Wall() {
                       <span>{file.name}</span>
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || mediaUploadBusy}
                         onClick={() => {
+                          const nextFiles = files.filter(
+                            (_, fileIndex) => fileIndex !== index,
+                          );
                           preparedMediaRef.current = null;
-                          setFiles((current) =>
-                            current.filter((_, fileIndex) => fileIndex !== index),
-                          );
-                          setUploadProgress((current) =>
-                            current.filter((_, fileIndex) => fileIndex !== index),
-                          );
+                          mediaUploadPromiseRef.current = null;
+                          mediaUploadFailedRef.current = false;
+                          setFiles(nextFiles);
+                          setUploadProgress(nextFiles.map(createUploadProgressItem));
+                          if (nextFiles.length > 0) {
+                            startMediaUpload(nextFiles);
+                          } else {
+                            preparedMediaRef.current = [];
+                            setStatus("");
+                          }
                         }}
                         aria-label={"移除 " + file.name}
                       >
@@ -1370,7 +1426,12 @@ export default function Wall() {
               </div>
               <div className="composer-bottom">
                 <div className="composer-tools">
-                  <label className={"attach-button" + (busy ? " disabled" : "")}>
+                    <label
+                      className={
+                        "attach-button" +
+                        (busy || mediaUploadBusy ? " disabled" : "")
+                      }
+                    >
                     <span>＋</span>
                     图片 / 视频
                     <input
@@ -1378,7 +1439,7 @@ export default function Wall() {
                       accept="image/*,video/*"
                       multiple
                       hidden
-                      disabled={busy}
+                      disabled={busy || mediaUploadBusy}
                       onChange={handleFiles}
                     />
                   </label>
@@ -1392,9 +1453,13 @@ export default function Wall() {
                 <button
                   className="primary-button"
                   type="submit"
-                  disabled={busy || !content.trim()}
+                  disabled={busy || mediaUploadBusy || !content.trim()}
                 >
-                  {busy ? "发布中..." : "发布上墙 🚀"}
+                  {mediaUploadBusy
+                    ? "媒体上传中…"
+                    : busy
+                      ? "发布中..."
+                      : "发布上墙 🚀"}
                 </button>
               </div>
               <div className={"status-line" + (error ? " error" : "")}>

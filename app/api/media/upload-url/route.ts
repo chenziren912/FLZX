@@ -1,6 +1,6 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
+import { createMediaUploadToken } from "../../../../lib/media-upload";
 import {
-  getStorage,
   hasStorage,
   isAllowedMediaType,
   mediaMaxBytes,
@@ -50,14 +50,13 @@ export async function POST(request: Request) {
     crypto.randomUUID() +
     safeFileExtension(name);
   try {
-    const uploadUrl = await getStorage().presign("PUT", key, 900, {
-      "content-type": type,
-    });
-    return json({
-      uploadUrl,
-      key,
-      expiresIn: 900,
-    });
+    const token = await createMediaUploadToken(key, type);
+    const uploadUrl =
+      "/api/media/upload?key=" +
+      encodeURIComponent(key) +
+      "&token=" +
+      encodeURIComponent(token);
+    return json({ uploadUrl, key, expiresIn: 900 });
   } catch (error) {
     return apiError(error, 503);
   }
