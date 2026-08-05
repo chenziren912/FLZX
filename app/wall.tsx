@@ -1132,7 +1132,9 @@ export default function Wall() {
               <h2>发表你的想法</h2>
               <div className="card-heading-actions">
                 <span>
-                  最多 {contentFormat === "markdown" ? MARKDOWN_CONTENT_LIMIT : PLAIN_CONTENT_LIMIT} 字
+                  {contentFormat === "markdown"
+                    ? `Markdown 最多 ${MARKDOWN_CONTENT_LIMIT} 字`
+                    : `纯文本最多 ${PLAIN_CONTENT_LIMIT} 字`}
                 </span>
                 <button
                   className={
