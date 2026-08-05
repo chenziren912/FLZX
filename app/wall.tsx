@@ -11,6 +11,10 @@ import {
 } from "react";
 import Link from "next/link";
 import MarkdownPreview from "./markdown-preview";
+import {
+  createVideoEmbed,
+  type VideoEmbedProvider,
+} from "./video-embed";
 
 type Media = {
   key: string;
@@ -222,6 +226,11 @@ export default function Wall() {
     "plain",
   );
   const [markdownModeOpen, setMarkdownModeOpen] = useState(false);
+  const [videoEmbedOpen, setVideoEmbedOpen] = useState(false);
+  const [videoEmbedProvider, setVideoEmbedProvider] =
+    useState<VideoEmbedProvider | null>(null);
+  const [videoEmbedUrl, setVideoEmbedUrl] = useState("");
+  const [videoEmbedError, setVideoEmbedError] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -259,6 +268,7 @@ export default function Wall() {
   const notificationEnabledRef = useRef(false);
   const knownPostIdsRef = useRef<Set<string> | null>(null);
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const videoEmbedInputRef = useRef<HTMLInputElement | null>(null);
   const preparedMediaRef = useRef<Media[] | null>(null);
   const captchaRetryRef = useRef<CaptchaRetry | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
@@ -465,6 +475,10 @@ export default function Wall() {
     const previousOverflow = document.body.style.overflow;
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (videoEmbedOpen) {
+          closeVideoEmbedDialog();
+          return;
+        }
         setMarkdownModeOpen(false);
       }
     };
@@ -474,7 +488,7 @@ export default function Wall() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [markdownModeOpen]);
+  }, [markdownModeOpen, videoEmbedOpen]);
 
   useEffect(() => {
     if (typeof Notification === "undefined") {
@@ -996,6 +1010,35 @@ export default function Wall() {
     setMarkdownModeOpen(true);
   }
 
+  function openVideoEmbedDialog() {
+    if (busy) {
+      return;
+    }
+    setVideoEmbedProvider(null);
+    setVideoEmbedUrl("");
+    setVideoEmbedError("");
+    setVideoEmbedOpen(true);
+  }
+
+  function closeVideoEmbedDialog() {
+    setVideoEmbedOpen(false);
+    setVideoEmbedProvider(null);
+    setVideoEmbedUrl("");
+    setVideoEmbedError("");
+  }
+
+  function closeMarkdownEditor() {
+    closeVideoEmbedDialog();
+    setMarkdownModeOpen(false);
+  }
+
+  function chooseVideoEmbedProvider(provider: VideoEmbedProvider) {
+    setVideoEmbedProvider(provider);
+    setVideoEmbedUrl("");
+    setVideoEmbedError("");
+    window.requestAnimationFrame(() => videoEmbedInputRef.current?.focus());
+  }
+
   function insertMarkdown(before: string, after = "", placeholder = "文本") {
     const input = markdownInputRef.current;
     if (!input) {
@@ -1019,6 +1062,41 @@ export default function Wall() {
         MARKDOWN_CONTENT_LIMIT,
       );
       input.setSelectionRange(selectionStart, selectionEnd);
+    });
+  }
+
+  function insertVideoEmbed() {
+    const provider = videoEmbedProvider;
+    const input = markdownInputRef.current;
+    if (!provider || !input) {
+      setVideoEmbedError("请先选择平台，再输入视频链接。");
+      return;
+    }
+    const result = createVideoEmbed(provider, videoEmbedUrl);
+    if ("error" in result) {
+      setVideoEmbedError(result.error);
+      return;
+    }
+
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const available =
+      MARKDOWN_CONTENT_LIMIT - (content.length - Math.max(0, end - start));
+    if (result.markdown.length > available) {
+      setVideoEmbedError(
+        `当前光标位置只剩 ${Math.max(0, available)} 字空间，无法完整插入视频。`,
+      );
+      return;
+    }
+
+    const nextContent =
+      content.slice(0, start) + result.markdown + content.slice(end);
+    setContent(nextContent);
+    closeVideoEmbedDialog();
+    window.requestAnimationFrame(() => {
+      input.focus();
+      const cursor = start + result.markdown.length;
+      input.setSelectionRange(cursor, cursor);
     });
   }
 
@@ -1646,14 +1724,14 @@ export default function Wall() {
                 <button
                   className="soft-button"
                   type="button"
-                  onClick={() => setMarkdownModeOpen(false)}
+                  onClick={closeMarkdownEditor}
                 >
                   返回发帖
                 </button>
                 <button
                   className="primary-button"
                   type="button"
-                  onClick={() => setMarkdownModeOpen(false)}
+                  onClick={closeMarkdownEditor}
                 >
                   完成编辑
                 </button>
@@ -1729,15 +1807,10 @@ export default function Wall() {
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() =>
-                  insertMarkdown(
-                    '<iframe src="https://player.bilibili.com/player.html?bvid=',
-                    '" title="视频"></iframe>',
-                    "BV1xxxx",
-                  )
-                }
+                onClick={openVideoEmbedDialog}
+                aria-label="嵌入网络视频"
               >
-                嵌入
+                嵌入网络视频
               </button>
             </div>
             <div className="markdown-editor-workspace">
@@ -1778,6 +1851,144 @@ export default function Wall() {
               <span>按 Esc 返回发帖</span>
             </footer>
           </section>
+          {videoEmbedOpen && (
+            <div
+              className="video-embed-backdrop"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  closeVideoEmbedDialog();
+                }
+              }}
+            >
+              <section
+                className="video-embed-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="video-embed-dialog-title"
+              >
+                <div className="video-embed-dialog-topline">
+                  <div className="video-embed-dialog-icon" aria-hidden="true">
+                    ▶
+                  </div>
+                  <button
+                    className="video-embed-close"
+                    type="button"
+                    onClick={closeVideoEmbedDialog}
+                    aria-label="关闭视频嵌入窗口"
+                  >
+                    ×
+                  </button>
+                </div>
+                <span className="video-embed-kicker">NETWORK VIDEO</span>
+                <h2 id="video-embed-dialog-title">嵌入网络视频</h2>
+                <p className="video-embed-description">
+                  选择视频平台，粘贴链接后会自动生成安全的播放器代码。
+                </p>
+                <div className="video-embed-provider-grid">
+                  <button
+                    className={
+                      "video-embed-provider" +
+                      (videoEmbedProvider === "bilibili" ? " selected" : "")
+                    }
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseVideoEmbedProvider("bilibili")}
+                    aria-pressed={videoEmbedProvider === "bilibili"}
+                  >
+                    <span className="video-embed-provider-logo bilibili-logo">
+                      哔
+                    </span>
+                    <span className="video-embed-provider-copy">
+                      <strong>哔哩哔哩</strong>
+                      <small>Bilibili</small>
+                    </span>
+                    <span className="video-embed-provider-radio" aria-hidden="true" />
+                  </button>
+                  <button
+                    className={
+                      "video-embed-provider" +
+                      (videoEmbedProvider === "youtube" ? " selected" : "")
+                    }
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseVideoEmbedProvider("youtube")}
+                    aria-pressed={videoEmbedProvider === "youtube"}
+                  >
+                    <span className="video-embed-provider-logo youtube-logo">
+                      ▶
+                    </span>
+                    <span className="video-embed-provider-copy">
+                      <strong>YouTube</strong>
+                      <small>YouTube</small>
+                    </span>
+                    <span className="video-embed-provider-radio" aria-hidden="true" />
+                  </button>
+                </div>
+                {videoEmbedProvider && (
+                  <form
+                    className="video-embed-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      insertVideoEmbed();
+                    }}
+                  >
+                    <label htmlFor="video-embed-url">视频链接</label>
+                    <input
+                      ref={videoEmbedInputRef}
+                      id="video-embed-url"
+                      type="url"
+                      value={videoEmbedUrl}
+                      onChange={(event) => {
+                        setVideoEmbedUrl(event.target.value);
+                        if (videoEmbedError) {
+                          setVideoEmbedError("");
+                        }
+                      }}
+                      placeholder={
+                        videoEmbedProvider === "youtube"
+                          ? "https://youtu.be/... 或 youtube.com/watch?v=..."
+                          : "https://www.bilibili.com/video/BV..."
+                      }
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <p className="video-embed-help">
+                      {videoEmbedProvider === "youtube"
+                        ? "支持 YouTube 视频页、Shorts、短链接和 /embed/ 链接。"
+                        : "支持哔哩哔哩视频页或 player.html 播放链接。"}
+                    </p>
+                    {videoEmbedError && (
+                      <p className="video-embed-error" role="alert">
+                        {videoEmbedError}
+                      </p>
+                    )}
+                    <div className="video-embed-actions">
+                      <button
+                        className="soft-button"
+                        type="button"
+                        onClick={closeVideoEmbedDialog}
+                      >
+                        取消
+                      </button>
+                      <button
+                        className="primary-button"
+                        type="submit"
+                        disabled={!videoEmbedUrl.trim()}
+                      >
+                        自动插入
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {!videoEmbedProvider && (
+                  <div className="video-embed-dialog-hint">
+                    先选择一个平台
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
         </div>
       )}
       {notificationPromptOpen && (

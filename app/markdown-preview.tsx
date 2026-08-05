@@ -12,6 +12,15 @@ type MarkdownPreviewProps = {
 const ALLOWED_IFRAME_HOSTS = new Set([
   "player.bilibili.com",
   "player.vimeo.com",
+  "m.youtube.com",
+  "youtube.com",
+  "www.youtube.com",
+  "www.youtube-nocookie.com",
+]);
+
+const YOUTUBE_IFRAME_HOSTS = new Set([
+  "m.youtube.com",
+  "youtube.com",
   "www.youtube.com",
   "www.youtube-nocookie.com",
 ]);
@@ -52,10 +61,7 @@ function iframeDecision(value: string) {
       ? { url, message: "" }
       : { url: null, message: "Bilibili iframe 必须使用 player.html 播放地址。" };
   }
-  if (
-    url.hostname === "www.youtube.com" ||
-    url.hostname === "www.youtube-nocookie.com"
-  ) {
+  if (YOUTUBE_IFRAME_HOSTS.has(url.hostname)) {
     return url.pathname.startsWith("/embed/")
       ? { url, message: "" }
       : { url: null, message: "YouTube iframe 必须使用 /embed/ 视频地址。" };
@@ -81,11 +87,22 @@ function configureIframe(iframe: HTMLIFrameElement) {
   }
   iframe.setAttribute("src", decision.url.href);
   iframe.setAttribute("loading", "lazy");
-  iframe.setAttribute("referrerpolicy", "no-referrer");
+  iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
   iframe.setAttribute(
-    "sandbox",
-    "allow-scripts allow-same-origin allow-presentation",
+    "allow",
+    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
   );
+  iframe.setAttribute("allowfullscreen", "");
+  if (YOUTUBE_IFRAME_HOSTS.has(decision.url.hostname)) {
+    // YouTube requires a real referrer/origin and does not reliably initialize
+    // inside a sandboxed document (it can surface player error 153).
+    iframe.removeAttribute("sandbox");
+  } else {
+    iframe.setAttribute(
+      "sandbox",
+      "allow-scripts allow-same-origin allow-presentation",
+    );
+  }
 }
 
 function getSanitizer() {
