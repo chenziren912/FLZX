@@ -60,6 +60,7 @@ const POSTS_PREFIX = DATA_PREFIX + "/posts/";
 const REPLIES_PREFIX = DATA_PREFIX + "/replies/";
 const ANNOUNCEMENTS_PREFIX = DATA_PREFIX + "/announcements/";
 const REPORTS_PREFIX = DATA_PREFIX + "/reports/";
+const MARKDOWN_PREVIEW_LENGTH = 520;
 
 export function postKey(createdAt: string, id: string) {
   return POSTS_PREFIX + createdAt.replace(/\D/g, "") + "_" + id + ".json";
@@ -116,11 +117,47 @@ export async function listPosts(search = "") {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-export type PublicPost = Omit<PostRecord, "deleteTokenHash">;
+export type PublicPost = Omit<PostRecord, "deleteTokenHash"> & {
+  hasMore?: boolean;
+};
 
-export function toPublicPost(post: PostRecord): PublicPost {
+function markdownPreview(content: string) {
+  if (content.length <= MARKDOWN_PREVIEW_LENGTH) {
+    return content;
+  }
+  const candidate = content.slice(0, MARKDOWN_PREVIEW_LENGTH);
+  const breakAt = Math.max(
+    candidate.lastIndexOf("\n\n"),
+    candidate.lastIndexOf("\n"),
+    candidate.lastIndexOf("。"),
+    candidate.lastIndexOf("！"),
+    candidate.lastIndexOf("？"),
+  );
+  const end = breakAt >= 180 ? breakAt + 1 : candidate.length;
+  const excerpt = content.slice(0, end).trimEnd();
+  // Avoid turning the rest of an excerpt into a fenced code block. The full
+  // source is still fetched only after the reader requests it.
+  const fences = excerpt.match(/```/g)?.length ?? 0;
+  return excerpt + (fences % 2 === 1 ? "\n```\n\n…" : "\n\n…");
+}
+
+export function toPublicPost(
+  post: PostRecord,
+  options: { summary?: boolean } = {},
+): PublicPost {
   const { deleteTokenHash, ...publicPost } = post;
   void deleteTokenHash;
+  if (
+    options.summary &&
+    publicPost.format === "markdown" &&
+    publicPost.content.length > MARKDOWN_PREVIEW_LENGTH
+  ) {
+    return {
+      ...publicPost,
+      content: markdownPreview(publicPost.content),
+      hasMore: true,
+    };
+  }
   return publicPost;
 }
 

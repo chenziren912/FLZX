@@ -21,7 +21,7 @@ export async function GET(request: Request) {
       reports: reports.map(toSafeReport),
       reportedPosts: posts
         .filter((post) => post.reports > 0)
-        .map(toPublicPost),
+        .map((post) => toPublicPost(post)),
     });
   } catch (error) {
     return apiError(error, 503);

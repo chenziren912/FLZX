@@ -29,6 +29,7 @@ type Post = {
   likes: number;
   reports: number;
   format?: "plain" | "markdown";
+  hasMore?: boolean;
 };
 
 type Reply = {
@@ -83,6 +84,9 @@ type UploadProgressItem = {
   state: UploadProgressState;
   error?: string;
 };
+
+const PLAIN_CONTENT_LIMIT = 200;
+const MARKDOWN_CONTENT_LIMIT = 5000;
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
@@ -240,6 +244,9 @@ export default function Wall() {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
   const [replyBusyPostId, setReplyBusyPostId] = useState<string | null>(null);
+  const [loadingFullPostIds, setLoadingFullPostIds] = useState<
+    Record<string, boolean>
+  >({});
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null);
   const [captchaOpen, setCaptchaOpen] = useState(false);
   const [captchaChallenge, setCaptchaChallenge] =
@@ -848,6 +855,25 @@ export default function Wall() {
     }
   }
 
+  async function loadFullPost(postId: string) {
+    if (loadingFullPostIds[postId]) {
+      return;
+    }
+    setLoadingFullPostIds((current) => ({ ...current, [postId]: true }));
+    try {
+      const result = await readJson<{ post: Post }>("/api/posts/" + postId);
+      setPosts((current) =>
+        current.map((post) =>
+          post.id === postId ? { ...result.post, hasMore: false } : post,
+        ),
+      );
+    } catch (caught) {
+      setError((caught as Error).message || "全文加载失败，请稍后重试。");
+    } finally {
+      setLoadingFullPostIds((current) => ({ ...current, [postId]: false }));
+    }
+  }
+
   async function submitReply(
     postId: string,
     proof: CaptchaProof = {},
@@ -980,14 +1006,17 @@ export default function Wall() {
     const selected = content.slice(start, end) || placeholder;
     const nextContent =
       content.slice(0, start) + before + selected + after + content.slice(end);
-    setContent(nextContent.slice(0, 200));
+    setContent(nextContent.slice(0, MARKDOWN_CONTENT_LIMIT));
     window.requestAnimationFrame(() => {
       input.focus();
-      const selectionStart = Math.min(start + before.length, 200);
+      const selectionStart = Math.min(
+        start + before.length,
+        MARKDOWN_CONTENT_LIMIT,
+      );
       const selectionEnd = Math.min(
         selectionStart + selected.length,
         nextContent.length,
-        200,
+        MARKDOWN_CONTENT_LIMIT,
       );
       input.setSelectionRange(selectionStart, selectionEnd);
     });
@@ -1102,7 +1131,9 @@ export default function Wall() {
             <div className="card-heading">
               <h2>发表你的想法</h2>
               <div className="card-heading-actions">
-                <span>最多 200 字</span>
+                <span>
+                  最多 {contentFormat === "markdown" ? MARKDOWN_CONTENT_LIMIT : PLAIN_CONTENT_LIMIT} 字
+                </span>
                 <button
                   className={
                     "markdown-mode-button" +
@@ -1135,7 +1166,11 @@ export default function Wall() {
                     ? "Markdown 模式已启用，可点击右上角进入全屏编辑…"
                     : "今天有什么新鲜事？"
                 }
-                maxLength={200}
+                maxLength={
+                  contentFormat === "markdown"
+                    ? MARKDOWN_CONTENT_LIMIT
+                    : PLAIN_CONTENT_LIMIT
+                }
                 required
               />
               {uploadProgress.length > 0 && (
@@ -1232,7 +1267,12 @@ export default function Wall() {
                       onChange={handleFiles}
                     />
                   </label>
-                  <span className="counter">{content.length}/200</span>
+                  <span className="counter">
+                    {content.length}/
+                    {contentFormat === "markdown"
+                      ? MARKDOWN_CONTENT_LIMIT
+                      : PLAIN_CONTENT_LIMIT}
+                  </span>
                 </div>
                 <button
                   className="primary-button"
@@ -1278,6 +1318,18 @@ export default function Wall() {
                     />
                   ) : (
                     <div className="post-content">{post.content}</div>
+                  )}
+                  {post.format === "markdown" && post.hasMore && (
+                    <button
+                      className="markdown-more-button"
+                      type="button"
+                      onClick={() => void loadFullPost(post.id)}
+                      disabled={Boolean(loadingFullPostIds[post.id])}
+                    >
+                      {loadingFullPostIds[post.id]
+                        ? "正在加载全文…"
+                        : "查看全文"}
+                    </button>
                   )}
                   {post.media.length > 0 && (
                     <div className="media-grid">
@@ -1586,7 +1638,9 @@ export default function Wall() {
                 <p>左侧自由书写，右侧实时预览你的校园墙内容。</p>
               </div>
               <div className="markdown-editor-header-actions">
-                <span className="markdown-character-count">{content.length}/200</span>
+                <span className="markdown-character-count">
+                  {content.length}/{MARKDOWN_CONTENT_LIMIT}
+                </span>
                 <button
                   className="soft-button"
                   type="button"
@@ -1697,7 +1751,7 @@ export default function Wall() {
                   onChange={(event) => setContent(event.target.value)}
                   onKeyDown={handleMarkdownKeyDown}
                   placeholder={'# 写下你的想法\n\n视频请使用 Bilibili / YouTube / Vimeo 的 HTTPS 播放地址…'}
-                  maxLength={200}
+                  maxLength={MARKDOWN_CONTENT_LIMIT}
                   autoFocus
                   spellCheck="false"
                 />

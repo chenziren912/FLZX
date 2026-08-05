@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   try {
     const posts = await listPosts(search);
     return deviceJson(request, {
-      posts: posts.map(toPublicPost),
+      posts: posts.map((post) => toPublicPost(post, { summary: true })),
       totalPages: 1,
       currentPage: 1,
       storageConfigured: hasStorage(),
@@ -66,19 +66,24 @@ export async function POST(request: Request) {
     return deviceJson(request, { error: "服务器存储尚未配置" }, { status: 503 });
   }
   const body = await parseBody<CreatePostBody>(request);
-  const content = typeof body?.content === "string" ? body.content.trim() : "";
   const author =
     typeof body?.author === "string" ? body.author.trim() || "匿名同学" : "匿名同学";
   if (body?.format !== undefined && body.format !== "plain" && body.format !== "markdown") {
     return deviceJson(request, { error: "内容格式无效" }, { status: 400 });
   }
   const format = body?.format === "markdown" ? "markdown" : "plain";
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
+  const contentLimit = format === "markdown" ? 5000 : 200;
   if (body?.media !== undefined && !Array.isArray(body.media)) {
     return deviceJson(request, { error: "媒体文件信息无效" }, { status: 400 });
   }
   const media = Array.isArray(body?.media) ? body.media : [];
-  if (!content || content.length > 200) {
-    return deviceJson(request, { error: "内容不能为空且不能超过 200 字" }, { status: 400 });
+  if (!content || content.length > contentLimit) {
+    return deviceJson(
+      request,
+      { error: `内容不能为空且不能超过 ${contentLimit} 字` },
+      { status: 400 },
+    );
   }
   if (author.length > 20) {
     return deviceJson(request, { error: "昵称不能超过 20 个字" }, { status: 400 });

@@ -759,6 +759,29 @@ a {
   line-height: 1.72;
 }
 
+.markdown-more-button {
+  min-height: 32px;
+  margin: 13px 0 -2px 49px;
+  padding: 0 13px;
+  border: 1px solid rgba(0, 122, 255, 0.17);
+  border-radius: 999px;
+  color: #007aff;
+  background: rgba(0, 122, 255, 0.08);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.markdown-more-button:hover:not(:disabled) {
+  border-color: rgba(0, 122, 255, 0.3);
+  background: rgba(0, 122, 255, 0.14);
+}
+
+.markdown-more-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2424,6 +2447,12 @@ a {
 .dark-mode .hero-subtitle,
 .dark-mode .post-content {
   color: #d6d7dc;
+}
+
+.dark-mode .markdown-more-button {
+  border-color: rgba(90, 170, 255, 0.25);
+  color: #91c9ff;
+  background: rgba(0, 122, 255, 0.16);
 }
 
   .dark-mode .icon-button,

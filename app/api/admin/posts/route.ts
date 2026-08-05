@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     return unauthorized;
   }
   try {
-    return json({ posts: (await listPosts()).map(toPublicPost) });
+    return json({ posts: (await listPosts()).map((post) => toPublicPost(post)) });
   } catch (error) {
     return apiError(error);
   }
