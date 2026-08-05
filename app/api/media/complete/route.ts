@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     return json({ error: "媒体信息无效" }, { status: 400 });
   }
   try {
-    const object = await getStorage().headObject(body.key);
+    const object = await getStorage().getObjectMetadata(body.key);
     if (!object) {
       return json({ error: "没有找到已上传的文件" }, { status: 404 });
     }

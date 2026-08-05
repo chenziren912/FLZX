@@ -352,6 +352,33 @@ export class S3CompatibleStore {
     }
   }
 
+  async getObjectMetadata(key: string) {
+    try {
+      return await this.headObject(key);
+    } catch (error) {
+      if (
+        !(error instanceof S3RequestError) ||
+        ![400, 403, 405, 501, 503].includes(error.status)
+      ) {
+        throw error;
+      }
+    }
+    const response = await this.signedRequest("GET", key, {
+      headers: { range: "bytes=0-0" },
+    });
+    const contentRange = response.headers.get("content-range") ?? "";
+    const totalMatch = contentRange.match(/\/(\d+)$/);
+    const contentLength = totalMatch
+      ? Number(totalMatch[1])
+      : Number(response.headers.get("content-length") ?? 0);
+    await response.body?.cancel();
+    return {
+      contentType:
+        response.headers.get("content-type") ?? "application/octet-stream",
+      contentLength,
+    };
+  }
+
   async putObject(
     key: string,
     body: string | ArrayBuffer | Uint8Array,
