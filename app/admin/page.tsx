@@ -40,6 +40,8 @@ type ReportedPost = {
   content: string;
   createdAt: string;
   reports: number;
+  media?: Array<{ key: string; name: string; type: string; size: number }>;
+  format?: "plain" | "markdown";
 };
 
 async function request<T>(input: RequestInfo | URL, init?: RequestInit) {
@@ -106,6 +108,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
+  const [posts, setPosts] = useState<ReportedPost[]>([]);
 
   async function refreshAdminData() {
     try {
@@ -114,12 +117,14 @@ export default function AdminPage() {
         request<{
           reports: ReportRecord[];
           reportedPosts: ReportedPost[];
+          posts: ReportedPost[];
         }>("/api/admin/reports"),
       ]);
       setStatus(statusData);
       setSourceType(statusData.state.sourceType ?? statusData.sourceType);
       setReports(reportData.reports);
       setReportedPosts(reportData.reportedPosts);
+      setPosts(reportData.posts);
       setLoggedIn(true);
     } catch (caught) {
       const text = (caught as Error).message;
@@ -199,6 +204,28 @@ export default function AdminPage() {
     }
   }
 
+  async function deleteAdminPost(post: ReportedPost) {
+    if (!window.confirm(`确定删除帖子「${post.content.slice(0, 36)}」吗？此操作会同时清理媒体和回复，无法撤销。`)) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request("/api/admin/posts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      setMessage("帖子已删除，关联媒体和回复已清理。");
+      await refreshAdminData();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function logout() {
     setBusy(true);
     try {
@@ -206,6 +233,7 @@ export default function AdminPage() {
       setLoggedIn(false);
       setReports([]);
       setReportedPosts([]);
+      setPosts([]);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -474,6 +502,16 @@ export default function AdminPage() {
                             重新打开
                           </button>
                         )}
+                        {post && (
+                          <button
+                            className="danger-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void deleteAdminPost(post)}
+                          >
+                            删除关联帖子
+                          </button>
+                        )}
                       </div>
                     </article>
                   );
@@ -497,6 +535,46 @@ export default function AdminPage() {
                       </p>
                     </article>
                   ))}
+              </div>
+            )}
+          </section>
+
+          <section className="management-panel posts-panel">
+            <div className="panel-heading-inline">
+              <div>
+                <h2>帖子管理</h2>
+                <p>管理员可以删除任意帖子；删除时会同时清理已关联的媒体、回复和互动记录。</p>
+              </div>
+              <span className="report-count">{posts.length} 篇帖子</span>
+            </div>
+            {posts.length === 0 ? (
+              <div className="report-empty">目前没有帖子。</div>
+            ) : (
+              <div className="report-list">
+                {posts.map((post) => (
+                  <article className="report-item admin-post-item" key={post.id}>
+                    <div className="report-item-head">
+                      <div>
+                        <strong className="admin-post-author">{post.author}</strong>
+                        <span>
+                          {formatTime(post.createdAt)} · {post.format === "markdown" ? "Markdown" : "纯文本"} · {post.media?.length ?? 0} 个媒体
+                        </span>
+                      </div>
+                      <span className="report-id">#{post.id.slice(0, 8)}</span>
+                    </div>
+                    <p className="admin-post-content">{post.content}</p>
+                    <div className="report-actions">
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void deleteAdminPost(post)}
+                      >
+                        删除帖子
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </section>

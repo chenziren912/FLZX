@@ -181,12 +181,25 @@ export async function savePost(post: PostRecord) {
 }
 
 export async function deletePost(id: string) {
-  const key = await findKeyById(POSTS_PREFIX, id);
-  if (key) {
-    await getStorage().deleteObject(key);
-  }
-  const replyKeys = await listAllKeys(getStorage(), REPLIES_PREFIX + id + "/");
-  await Promise.all(replyKeys.map((key) => getStorage().deleteObject(key)));
+  const store = getStorage();
+  const [key, post, replyKeys, interactionKeys] = await Promise.all([
+    findKeyById(POSTS_PREFIX, id),
+    getPost(id),
+    listAllKeys(store, REPLIES_PREFIX + id + "/"),
+    listAllKeys(store, DATA_PREFIX + "/interactions/" + id + "/"),
+  ]);
+  const mediaKeys = (post?.media ?? [])
+    .map((media) => media.key)
+    .filter(isMediaKey);
+  const keys = Array.from(
+    new Set([
+      ...(key ? [key] : []),
+      ...replyKeys,
+      ...interactionKeys,
+      ...mediaKeys,
+    ]),
+  );
+  await Promise.all(keys.map((objectKey) => store.deleteObject(objectKey)));
 }
 
 export async function listReplies(postId: string) {

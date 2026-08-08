@@ -99,8 +99,8 @@ function createIframeMarkdown(
   const title = provider === "youtube" ? "YouTube 视频" : "哔哩哔哩视频";
   const allow =
     provider === "youtube"
-      ? "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-      : "autoplay; fullscreen; picture-in-picture";
+      ? "accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+      : "fullscreen; picture-in-picture";
   return `<iframe src="${src}" title="${title}" width="100%" height="400" loading="lazy" allow="${allow}" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
 }
 
@@ -120,7 +120,9 @@ export function createVideoEmbed(
         error: "请输入 YouTube 视频页、Shorts、短链接或 /embed/ 播放链接。",
       };
     }
-    const src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?rel=0`;
+    const src =
+      `https://www.youtube.com/embed/${encodeURIComponent(videoId)}` +
+      "?rel=0&autoplay=0&mute=1&muted=1";
     return { provider, src, markdown: createIframeMarkdown(provider, src) };
   }
 
@@ -134,6 +136,8 @@ export function createVideoEmbed(
     video.kind === "bvid"
       ? `bvid=${encodeURIComponent(video.value)}`
       : `aid=${encodeURIComponent(video.value)}`;
-  const src = `https://player.bilibili.com/player.html?${query}`;
+  const src =
+    `https://player.bilibili.com/player.html?${query}` +
+    "&autoplay=0&mute=1&muted=1";
   return { provider, src, markdown: createIframeMarkdown(provider, src) };
 }

@@ -79,18 +79,29 @@ function iframeWarning(message: string) {
   return warning;
 }
 
+function forceMutedNoAutoplay(url: URL) {
+  // The player query is defensive for embeds that were pasted with
+  // autoplay=1. Removing autoplay from `allow` below is the browser-level
+  // guard; these parameters cover the player-level defaults.
+  url.searchParams.set("autoplay", "0");
+  url.searchParams.set("mute", "1");
+  url.searchParams.set("muted", "1");
+  return url;
+}
+
 function configureIframe(iframe: HTMLIFrameElement) {
   const decision = iframeDecision(iframe.getAttribute("src") ?? "");
   if (!decision.url) {
     iframe.replaceWith(iframeWarning(decision.message));
     return;
   }
-  iframe.setAttribute("src", decision.url.href);
+  const safeUrl = forceMutedNoAutoplay(decision.url);
+  iframe.setAttribute("src", safeUrl.href);
   iframe.setAttribute("loading", "lazy");
   iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
   iframe.setAttribute(
     "allow",
-    "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share",
+    "accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen",
   );
   iframe.setAttribute("allowfullscreen", "");
   if (YOUTUBE_IFRAME_HOSTS.has(decision.url.hostname)) {

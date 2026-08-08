@@ -22,6 +22,7 @@ export async function GET(request: Request) {
       reportedPosts: posts
         .filter((post) => post.reports > 0)
         .map((post) => toPublicPost(post)),
+      posts: posts.map((post) => toPublicPost(post)),
     });
   } catch (error) {
     return apiError(error, 503);
