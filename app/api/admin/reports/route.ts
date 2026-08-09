@@ -3,7 +3,7 @@ import {
   listPosts,
   listReports,
   ReportStatus,
-  toPublicPost,
+  toAdminPost,
   toSafeReport,
   updateReportStatus,
 } from "../../../../lib/wall-data";
@@ -21,8 +21,8 @@ export async function GET(request: Request) {
       reports: reports.map(toSafeReport),
       reportedPosts: posts
         .filter((post) => post.reports > 0)
-        .map((post) => toPublicPost(post)),
-      posts: posts.map((post) => toPublicPost(post)),
+        .map(toAdminPost),
+      posts: posts.map(toAdminPost),
     });
   } catch (error) {
     return apiError(error, 503);

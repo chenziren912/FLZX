@@ -32,6 +32,8 @@ type ReportRecord = {
   reason: string;
   createdAt: string;
   status: ReportStatus;
+  accountId?: string;
+  sourceIpHash?: string;
 };
 
 type ReportedPost = {
@@ -42,6 +44,40 @@ type ReportedPost = {
   reports: number;
   media?: Array<{ key: string; name: string; type: string; size: number }>;
   format?: "plain" | "markdown";
+  accountId?: string;
+  sourceIpHash?: string;
+};
+
+type Restriction = {
+  kind: "ban" | "mute";
+  reason: string;
+  createdAt: string;
+  expiresAt: string | null;
+};
+
+type ManagedAccount = {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+  xp: number;
+  postCount: number;
+  replyCount: number;
+  restriction?: Restriction | null;
+  postingRule: { level: number; cooldownSeconds: number; nextLevelXp: number | null };
+};
+
+type ManagedIpRestriction = {
+  ipHash: string;
+  updatedAt: string;
+  restriction: Restriction | null;
+};
+
+type Announcement = {
+  id: string;
+  title?: string;
+  content: string;
+  createdAt: string;
 };
 
 async function request<T>(input: RequestInfo | URL, init?: RequestInit) {
@@ -109,22 +145,40 @@ export default function AdminPage() {
   const [reports, setReports] = useState<ReportRecord[]>([]);
   const [reportedPosts, setReportedPosts] = useState<ReportedPost[]>([]);
   const [posts, setPosts] = useState<ReportedPost[]>([]);
+  const [accounts, setAccounts] = useState<ManagedAccount[]>([]);
+  const [ipRestrictions, setIpRestrictions] = useState<ManagedIpRestriction[]>([]);
+  const [moderationDuration, setModerationDuration] = useState("24");
+  const [moderationReason, setModerationReason] = useState("");
+  const [messageAccountId, setMessageAccountId] = useState("");
+  const [messageTitle, setMessageTitle] = useState("");
+  const [messageContent, setMessageContent] = useState("");
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   async function refreshAdminData() {
     try {
-      const [statusData, reportData] = await Promise.all([
+      const [statusData, reportData, accountData, announcementData] = await Promise.all([
         request<StatusResponse>("/api/admin/migration/status"),
         request<{
           reports: ReportRecord[];
           reportedPosts: ReportedPost[];
           posts: ReportedPost[];
         }>("/api/admin/reports"),
+        request<{
+          accounts: ManagedAccount[];
+          ipRestrictions: ManagedIpRestriction[];
+        }>("/api/admin/accounts"),
+        request<{ announcements: Announcement[] }>("/api/announcements"),
       ]);
       setStatus(statusData);
       setSourceType(statusData.state.sourceType ?? statusData.sourceType);
       setReports(reportData.reports);
       setReportedPosts(reportData.reportedPosts);
       setPosts(reportData.posts);
+      setAccounts(accountData.accounts);
+      setIpRestrictions(accountData.ipRestrictions);
+      setAnnouncements(announcementData.announcements);
       setLoggedIn(true);
     } catch (caught) {
       const text = (caught as Error).message;
@@ -226,6 +280,129 @@ export default function AdminPage() {
     }
   }
 
+  function selectedDurationHours() {
+    const hours = Number(moderationDuration);
+    return [0, 24, 168].includes(hours) ? hours : 24;
+  }
+
+  function restrictionLabel(restriction: Restriction | null | undefined) {
+    if (!restriction) {
+      return "未限制";
+    }
+    const duration = restriction.expiresAt
+      ? `至 ${formatTime(restriction.expiresAt)}`
+      : "永久";
+    return `${restriction.kind === "ban" ? "封禁" : "禁言"} · ${duration}`;
+  }
+
+  async function restrictAccount(
+    accountId: string,
+    restriction: "ban" | "mute",
+  ) {
+    if (!window.confirm(`确定要${restriction === "ban" ? "封禁" : "禁言"}该账户吗？`)) {
+      return;
+    }
+    await runAction(
+      "/api/admin/accounts",
+      {
+        action: "restrictAccount",
+        accountId,
+        restriction,
+        durationHours: selectedDurationHours(),
+        reason: moderationReason.trim(),
+      },
+      `账户已${restriction === "ban" ? "封禁" : "禁言"}。`,
+    );
+  }
+
+  async function restrictIp(ipHash: string, restriction: "ban" | "mute") {
+    if (!window.confirm(`确定要${restriction === "ban" ? "封禁" : "禁言"}该网络吗？`)) {
+      return;
+    }
+    await runAction(
+      "/api/admin/accounts",
+      {
+        action: "restrictIp",
+        ipHash,
+        restriction,
+        durationHours: selectedDurationHours(),
+        reason: moderationReason.trim(),
+      },
+      `网络已${restriction === "ban" ? "封禁" : "禁言"}。`,
+    );
+  }
+
+  async function sendStationMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!messageAccountId || !messageTitle.trim() || !messageContent.trim()) {
+      setError("请选择账户，并填写站内信标题和内容。");
+      return;
+    }
+    await runAction(
+      "/api/admin/accounts",
+      {
+        action: "sendMessage",
+        accountId: messageAccountId,
+        title: messageTitle.trim(),
+        content: messageContent.trim(),
+      },
+      "站内信已发送。",
+    );
+    setMessageTitle("");
+    setMessageContent("");
+  }
+
+  async function publishAnnouncement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!announcementContent.trim()) {
+      setError("请填写公告内容。");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: announcementTitle.trim() || "校园公告",
+          content: announcementContent.trim(),
+        }),
+      });
+      setAnnouncementTitle("");
+      setAnnouncementContent("");
+      setMessage("公告已发布，会在用户访问校园墙时显示。");
+      await refreshAdminData();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteAnnouncement(id: string) {
+    if (!window.confirm("确定撤下这条公告吗？")) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request("/api/announcements", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      setMessage("公告已撤下。");
+      await refreshAdminData();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function logout() {
     setBusy(true);
     try {
@@ -234,6 +411,9 @@ export default function AdminPage() {
       setReports([]);
       setReportedPosts([]);
       setPosts([]);
+      setAccounts([]);
+      setIpRestrictions([]);
+      setAnnouncements([]);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -439,6 +619,257 @@ export default function AdminPage() {
             </section>
           </div>
 
+          <section className="management-panel account-management-panel">
+            <div className="panel-heading-inline">
+              <div>
+                <h2>账户与网络管理</h2>
+                <p>账户标识与网络标识均为不可逆哈希；不会在后台显示原始登录信息或 IP。</p>
+              </div>
+              <span className="report-count">{accounts.length} 个账户</span>
+            </div>
+            <div className="management-fields moderation-fields">
+              <label className="management-field">
+                限制时长
+                <select
+                  value={moderationDuration}
+                  onChange={(event) => setModerationDuration(event.target.value)}
+                  disabled={busy}
+                >
+                  <option value="24">24 小时</option>
+                  <option value="168">7 天</option>
+                  <option value="0">永久</option>
+                </select>
+              </label>
+              <label className="management-field moderation-reason-field">
+                处理原因（可选，用户账户中心可见）
+                <input
+                  value={moderationReason}
+                  onChange={(event) => setModerationReason(event.target.value)}
+                  maxLength={160}
+                  placeholder="例如：多次发布无关内容"
+                  disabled={busy}
+                />
+              </label>
+            </div>
+            {accounts.length === 0 ? (
+              <div className="report-empty">尚无登录账户。用户首次登录、发帖、评论或互动后会出现在这里。</div>
+            ) : (
+              <div className="account-management-list">
+                {accounts.map((account) => (
+                  <article className="managed-account-item" key={account.id}>
+                    <div className="managed-account-head">
+                      <div>
+                        <strong>{account.displayName}</strong>
+                        <span>
+                          Lv.{account.postingRule.level} · {account.xp} 经验 · {account.postCount} 帖 / {account.replyCount} 评论
+                        </span>
+                      </div>
+                      <span className="report-id">#{account.id.slice(0, 12)}</span>
+                    </div>
+                    <p className={"restriction-state" + (account.restriction ? " restricted" : "")}>
+                      {restrictionLabel(account.restriction)}
+                      {account.restriction?.reason ? `：${account.restriction.reason}` : ""}
+                    </p>
+                    <div className="report-actions">
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void restrictAccount(account.id, "ban")}
+                      >
+                        封禁账户
+                      </button>
+                      <button
+                        className="soft-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void restrictAccount(account.id, "mute")}
+                      >
+                        禁言账户
+                      </button>
+                      {account.restriction && (
+                        <button
+                          className="soft-button"
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void runAction(
+                              "/api/admin/accounts",
+                              { action: "clearAccountRestriction", accountId: account.id },
+                              "账户限制已解除。",
+                            )
+                          }
+                        >
+                          解除限制
+                        </button>
+                      )}
+                      <button
+                        className="soft-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMessageAccountId(account.id);
+                          setMessage("已选择「" + account.displayName + "」作为站内信收件人。");
+                        }}
+                      >
+                        发送站内信
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <div className="ip-restrictions-block">
+              <div className="panel-heading-inline">
+                <div>
+                  <h3>已限制网络</h3>
+                  <p>在帖子或举报记录中可对对应网络执行封禁、禁言操作。</p>
+                </div>
+                <span className="report-count">{ipRestrictions.length} 条</span>
+              </div>
+              {ipRestrictions.length === 0 ? (
+                <p className="network-empty">目前没有网络限制。</p>
+              ) : (
+                <div className="network-restriction-list">
+                  {ipRestrictions.map((record) => (
+                    <div className="network-restriction-item" key={record.ipHash}>
+                      <div>
+                        <strong>{restrictionLabel(record.restriction)}</strong>
+                        <span className="report-id">网络 #{record.ipHash.slice(0, 14)}</span>
+                        {record.restriction?.reason && <small>{record.restriction.reason}</small>}
+                      </div>
+                      <button
+                        className="soft-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          void runAction(
+                            "/api/admin/accounts",
+                            { action: "clearIpRestriction", ipHash: record.ipHash },
+                            "网络限制已解除。",
+                          )
+                        }
+                      >
+                        解除限制
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="management-panel station-message-panel">
+            <div className="panel-heading-inline">
+              <div>
+                <h2>发送站内消息</h2>
+                <p>消息仅在对应用户打开账户中心时读取；不会冒充浏览器推送。</p>
+              </div>
+            </div>
+            <form className="admin-composer-form" onSubmit={sendStationMessage}>
+              <label className="management-field">
+                收件账户
+                <select
+                  value={messageAccountId}
+                  onChange={(event) => setMessageAccountId(event.target.value)}
+                  disabled={busy}
+                  required
+                >
+                  <option value="">请选择账户</option>
+                  {accounts.map((account) => (
+                    <option value={account.id} key={account.id}>
+                      {account.displayName} · #{account.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="management-field">
+                标题
+                <input
+                  value={messageTitle}
+                  onChange={(event) => setMessageTitle(event.target.value)}
+                  maxLength={80}
+                  placeholder="例如：关于你的帖子"
+                  disabled={busy}
+                  required
+                />
+              </label>
+              <label className="management-field admin-wide-field">
+                内容
+                <textarea
+                  value={messageContent}
+                  onChange={(event) => setMessageContent(event.target.value)}
+                  maxLength={1000}
+                  placeholder="请输入要发送给该账户的内容…"
+                  disabled={busy}
+                  required
+                />
+              </label>
+              <button className="primary-button" type="submit" disabled={busy || !messageAccountId}>
+                发送站内信
+              </button>
+            </form>
+          </section>
+
+          <section className="management-panel announcement-management-panel">
+            <div className="panel-heading-inline">
+              <div>
+                <h2>访问公告</h2>
+                <p>公告会在用户访问校园墙时以弹窗显示；用户可选择不再显示、1 天内不再显示或稍后再说。</p>
+              </div>
+              <span className="report-count">{announcements.length} 条</span>
+            </div>
+            <form className="admin-composer-form" onSubmit={publishAnnouncement}>
+              <label className="management-field">
+                标题（可选）
+                <input
+                  value={announcementTitle}
+                  onChange={(event) => setAnnouncementTitle(event.target.value)}
+                  maxLength={80}
+                  placeholder="默认：校园公告"
+                  disabled={busy}
+                />
+              </label>
+              <label className="management-field admin-wide-field">
+                公告内容
+                <textarea
+                  value={announcementContent}
+                  onChange={(event) => setAnnouncementContent(event.target.value)}
+                  maxLength={500}
+                  placeholder="填写用户访问时会看到的公告…"
+                  disabled={busy}
+                  required
+                />
+              </label>
+              <button className="primary-button" type="submit" disabled={busy || !announcementContent.trim()}>
+                发布公告
+              </button>
+            </form>
+            {announcements.length > 0 && (
+              <div className="announcement-admin-list">
+                {announcements.map((announcement) => (
+                  <article className="report-item" key={announcement.id}>
+                    <div className="report-item-head">
+                      <div>
+                        <strong className="admin-post-author">{announcement.title || "校园公告"}</strong>
+                        <span>{formatTime(announcement.createdAt)}</span>
+                      </div>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void deleteAnnouncement(announcement.id)}
+                      >
+                        撤下
+                      </button>
+                    </div>
+                    <p className="report-target">{announcement.content}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
           <section className="management-panel reports-panel">
             <div className="panel-heading-inline">
               <div>
@@ -512,6 +943,26 @@ export default function AdminPage() {
                             删除关联帖子
                           </button>
                         )}
+                        {report.accountId && (
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictAccount(report.accountId as string, "mute")}
+                          >
+                            禁言举报账户
+                          </button>
+                        )}
+                        {report.sourceIpHash && (
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictIp(report.sourceIpHash as string, "mute")}
+                          >
+                            禁言举报网络
+                          </button>
+                        )}
                       </div>
                     </article>
                   );
@@ -563,7 +1014,64 @@ export default function AdminPage() {
                       <span className="report-id">#{post.id.slice(0, 8)}</span>
                     </div>
                     <p className="admin-post-content">{post.content}</p>
+                    {(post.accountId || post.sourceIpHash) && (
+                      <p className="admin-post-identifiers">
+                        {post.accountId ? `账户 #${post.accountId.slice(0, 12)}` : "匿名设备"}
+                        {post.sourceIpHash ? ` · 网络 #${post.sourceIpHash.slice(0, 14)}` : ""}
+                      </p>
+                    )}
                     <div className="report-actions">
+                      {post.accountId && (
+                        <>
+                          <button
+                            className="danger-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictAccount(post.accountId as string, "ban")}
+                          >
+                            封禁账户
+                          </button>
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictAccount(post.accountId as string, "mute")}
+                          >
+                            禁言账户
+                          </button>
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              setMessageAccountId(post.accountId as string);
+                              setMessage("已选择该帖账户作为站内信收件人。");
+                            }}
+                          >
+                            站内信
+                          </button>
+                        </>
+                      )}
+                      {post.sourceIpHash && (
+                        <>
+                          <button
+                            className="danger-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictIp(post.sourceIpHash as string, "ban")}
+                          >
+                            封禁网络
+                          </button>
+                          <button
+                            className="soft-button"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void restrictIp(post.sourceIpHash as string, "mute")}
+                          >
+                            禁言网络
+                          </button>
+                        </>
+                      )}
                       <button
                         className="danger-button"
                         type="button"

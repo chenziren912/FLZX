@@ -168,6 +168,79 @@ a {
   gap: 9px;
 }
 
+.account-button {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 11px 4px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 15px;
+  color: #42516a;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+  backdrop-filter: blur(20px);
+  cursor: pointer;
+  transition: transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.account-button:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.11);
+}
+
+.account-avatar,
+.account-dialog-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0a84ff, #6757d8);
+  font-weight: 850;
+}
+
+.account-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+.account-button-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+}
+
+.account-button-copy strong,
+.account-button-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-button-copy strong {
+  font-size: 11px;
+}
+
+.account-button-copy small,
+.account-loading-pill {
+  color: #8a94a3;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.account-loading-pill {
+  padding: 0 5px;
+}
+
+.account-login-button {
+  min-width: 58px;
+}
+
 .icon-button,
 .soft-button {
   display: inline-flex;
@@ -572,6 +645,12 @@ a {
   font-weight: 700;
 }
 
+.posting-rule-note {
+  color: #8d96a4;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .file-list {
   display: grid;
   gap: 9px;
@@ -724,6 +803,28 @@ a {
 .post-list {
   display: grid;
   gap: 12px;
+}
+
+.load-more-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 68px;
+  padding: 15px 0 3px;
+}
+
+.load-more-button {
+  min-height: 38px;
+}
+
+.load-more-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 122, 255, 0.16);
+  border-top-color: #007aff;
+  border-radius: 50%;
+  animation: feedback-spin 840ms linear infinite;
 }
 
 .empty-card,
@@ -2199,6 +2300,285 @@ a {
   box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
 }
 
+.announcement-backdrop {
+  z-index: 72;
+}
+
+.announcement-dialog {
+  width: min(500px, 100%);
+  padding: 30px;
+  text-align: left;
+  animation: feedback-pop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.announcement-dialog-topline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #5f70cc;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.announcement-dialog-icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 9px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #6b75ea, #8b65dc);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.announcement-dialog h2 {
+  margin-top: 18px;
+  color: #202738;
+  font-size: 27px;
+}
+
+.announcement-time {
+  margin-top: 7px !important;
+  color: #9aa2ae !important;
+  font-size: 11px !important;
+}
+
+.announcement-content {
+  margin-top: 18px !important;
+  color: #586274 !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.announcement-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 26px;
+}
+
+.text-button {
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 10px;
+  color: #778294;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.text-button:hover:not(:disabled) {
+  color: #007aff;
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.text-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.account-backdrop {
+  z-index: 74;
+}
+
+.account-dialog {
+  width: min(540px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  padding: 27px;
+  overflow: auto;
+  animation: feedback-pop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.account-dialog-head,
+.account-dialog-profile,
+.account-messages-head,
+.account-message-item-head,
+.account-dialog-actions {
+  display: flex;
+  align-items: center;
+}
+
+.account-dialog-head,
+.account-messages-head,
+.account-dialog-actions {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.account-dialog-profile {
+  gap: 12px;
+  min-width: 0;
+}
+
+.account-dialog-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  font-size: 20px;
+}
+
+.account-dialog-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: #7180db;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.account-dialog h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #1f2738;
+  font-size: 25px;
+  letter-spacing: -0.045em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-close-button {
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.account-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.account-stats-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 13px 11px;
+  border: 1px solid rgba(0, 122, 255, 0.1);
+  border-radius: 15px;
+  background: rgba(0, 122, 255, 0.055);
+}
+
+.account-stats-grid strong {
+  color: #255eaa;
+  font-size: 18px;
+  letter-spacing: -0.04em;
+}
+
+.account-stats-grid span {
+  color: #8994a5;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.account-rule-copy,
+.account-restriction-note {
+  margin: 13px 0 0;
+  color: #7d8796;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.account-restriction-note {
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 149, 0, 0.2);
+  border-radius: 12px;
+  color: #9b6704;
+  background: rgba(255, 149, 0, 0.1);
+}
+
+.account-messages-head {
+  margin-top: 24px;
+}
+
+.account-messages-head h3 {
+  margin: 0;
+  color: #2a3345;
+  font-size: 15px;
+  letter-spacing: -0.03em;
+}
+
+.account-messages-head span {
+  color: #8e98a8;
+  font-size: 10px;
+}
+
+.account-message-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.account-message-empty {
+  margin: 0;
+  padding: 20px 12px;
+  border: 1px dashed rgba(116, 116, 125, 0.23);
+  border-radius: 13px;
+  color: #929aa7;
+  text-align: center;
+  font-size: 11px;
+}
+
+.account-message-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(116, 128, 148, 0.12);
+  border-radius: 14px;
+  color: #687386;
+  background: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.account-message-item.unread {
+  border-color: rgba(0, 122, 255, 0.22);
+  color: #47566e;
+  background: rgba(0, 122, 255, 0.07);
+}
+
+.account-message-item:hover {
+  border-color: rgba(0, 122, 255, 0.25);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.account-message-item-head {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-message-item-head strong {
+  color: #2f3a4c;
+  font-size: 12px;
+}
+
+.account-message-item-head small {
+  flex: 0 0 auto;
+  color: #9da5b0;
+  font-size: 9px;
+}
+
+.account-dialog-actions {
+  justify-content: flex-end;
+  margin-top: 19px;
+}
+
+.account-dialog-actions .soft-button,
+.account-dialog-actions .primary-button,
+.announcement-actions .soft-button,
+.announcement-actions .primary-button {
+  min-height: 40px;
+}
+
 .admin-page {
   display: grid;
   place-items: center;
@@ -2468,6 +2848,121 @@ a {
   word-break: break-word;
 }
 
+.admin-post-identifiers,
+.restriction-state,
+.network-empty {
+  margin: 9px 0 0 !important;
+  color: #8792a2 !important;
+  font-size: 10px !important;
+  line-height: 1.55 !important;
+}
+
+.restriction-state.restricted {
+  color: #9b6704 !important;
+}
+
+.account-management-list,
+.network-restriction-list,
+.announcement-admin-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.managed-account-item,
+.network-restriction-item {
+  padding: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.managed-account-head,
+.network-restriction-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.managed-account-head > div,
+.network-restriction-item > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.managed-account-head strong,
+.network-restriction-item strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.managed-account-head span,
+.network-restriction-item span,
+.network-restriction-item small {
+  color: #9099a6;
+  font-size: 10px;
+}
+
+.network-restriction-item small {
+  color: #9b6704;
+  line-height: 1.45;
+}
+
+.ip-restrictions-block {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(116, 116, 125, 0.12);
+}
+
+.ip-restrictions-block h3 {
+  margin: 0 0 5px;
+  color: var(--ink);
+  font-size: 15px;
+  letter-spacing: -0.03em;
+}
+
+.moderation-fields {
+  grid-template-columns: minmax(120px, 0.36fr) minmax(0, 1fr);
+}
+
+.admin-composer-form {
+  display: grid;
+  grid-template-columns: minmax(0, 0.5fr) minmax(0, 0.5fr);
+  gap: 11px;
+  margin-top: 18px;
+}
+
+.admin-wide-field {
+  grid-column: 1 / -1;
+}
+
+.admin-composer-form textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 12px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.56);
+  outline: 0;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.admin-composer-form textarea:focus {
+  border-color: rgba(0, 122, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.admin-composer-form .primary-button {
+  justify-self: start;
+  min-height: 42px;
+}
+
 .management-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2582,6 +3077,19 @@ a {
     margin-bottom: 16px;
   }
 
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .account-button {
+    max-width: 42px;
+    padding: 4px;
+  }
+
+  .account-button-copy {
+    display: none;
+  }
+
   .soft-button {
     padding: 0 11px;
   }
@@ -2617,6 +3125,24 @@ a {
 
   .dialog-actions {
     flex-direction: column-reverse;
+  }
+
+  .announcement-dialog,
+  .account-dialog {
+    padding: 22px;
+  }
+
+  .announcement-actions,
+  .account-dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .announcement-actions .primary-button,
+  .announcement-actions .soft-button,
+  .account-dialog-actions .primary-button,
+  .account-dialog-actions .soft-button {
+    width: 100%;
   }
 
   .composer-bottom {
@@ -2662,6 +3188,20 @@ a {
   .management-fields,
   .migration-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .moderation-fields,
+  .admin-composer-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-wide-field {
+    grid-column: auto;
+  }
+
+  .managed-account-head,
+  .network-restriction-item {
+    flex-direction: column;
   }
 
   .markdown-editor-overlay {
@@ -2983,4 +3523,36 @@ a {
 
 .dark-mode .action-feedback-backdrop {
   background: rgba(0, 0, 0, 0.56);
+}
+
+.dark-mode .account-button,
+.dark-mode .account-message-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #c9d3e3;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dark-mode .account-message-item.unread,
+.dark-mode .account-stats-grid > div {
+  border-color: rgba(90, 170, 255, 0.2);
+  background: rgba(90, 170, 255, 0.1);
+}
+
+.dark-mode .account-dialog h2,
+.dark-mode .account-messages-head h3,
+.dark-mode .account-message-item-head strong,
+.dark-mode .announcement-dialog h2 {
+  color: #f0f4fa;
+}
+
+.dark-mode .announcement-content,
+.dark-mode .account-rule-copy {
+  color: #b9c3d1 !important;
+}
+
+.dark-mode .managed-account-item,
+.dark-mode .network-restriction-item,
+.dark-mode .admin-composer-form textarea {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
 }

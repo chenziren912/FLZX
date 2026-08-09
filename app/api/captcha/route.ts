@@ -1,4 +1,5 @@
 import { apiError, guardMaintenance } from "../../../lib/api";
+import { getAccessBlock, resolveRequestIdentity } from "../../../lib/accounts";
 import {
   deviceJson,
   issueCaptcha,
@@ -15,6 +16,20 @@ export async function POST(request: Request) {
     return deviceJson(request, { error: "验证码服务尚未配置" }, { status: 503 });
   }
   try {
+    const identity = await resolveRequestIdentity(request, null);
+    const accessBlock = await getAccessBlock(identity, "write");
+    if (accessBlock) {
+      return deviceJson(
+        request,
+        { error: accessBlock.message, blocked: true },
+        {
+          status: accessBlock.status,
+          headers: accessBlock.retryAfterSeconds
+            ? { "Retry-After": String(accessBlock.retryAfterSeconds) }
+            : undefined,
+        },
+      );
+    }
     // The challenge is stored server-side; only the rendered noise image and
     // an opaque id are returned to the browser.
     return deviceJson(request, await issueCaptcha(request), {

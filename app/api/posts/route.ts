@@ -1,3 +1,12 @@
+import { getChatGPTUser } from "../../chatgpt-auth";
+import {
+  accountPublicProfile,
+  checkPostCooldown,
+  getAccessBlock,
+  grantExperience,
+  recordPostCooldown,
+  resolveRequestIdentity,
+} from "../../../lib/accounts";
 import { apiError, guardMaintenance, parseBody } from "../../../lib/api";
 import {
   deviceJson,
@@ -14,7 +23,7 @@ import {
   mediaMaxBytes,
 } from "../../../lib/storage";
 import {
-  listPosts,
+  listPostsPage,
   PostRecord,
   savePost,
   toPublicPost,
@@ -38,18 +47,42 @@ function randomId() {
   return crypto.randomUUID();
 }
 
+function blockedResponse(
+  request: Request,
+  block: { status: 403 | 423; message: string; retryAfterSeconds?: number },
+) {
+  return deviceJson(
+    request,
+    { error: block.message, blocked: true },
+    {
+      status: block.status,
+      headers: block.retryAfterSeconds
+        ? { "Retry-After": String(block.retryAfterSeconds) }
+        : undefined,
+    },
+  );
+}
+
 export async function GET(request: Request) {
   const blocked = await guardMaintenance();
   if (blocked) {
     return withDeviceCookie(request, blocked);
   }
-  const search = new URL(request.url).searchParams.get("search") ?? "";
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search") ?? "";
+  const cursor = url.searchParams.get("cursor") ?? "";
+  const requestedLimit = Number(url.searchParams.get("limit") ?? 12);
   try {
-    const posts = await listPosts(search);
+    const identity = await resolveRequestIdentity(request, await getChatGPTUser());
+    const accessBlock = await getAccessBlock(identity, "read");
+    if (accessBlock) {
+      return blockedResponse(request, accessBlock);
+    }
+    const page = await listPostsPage(search, cursor, requestedLimit);
     return deviceJson(request, {
-      posts: posts.map((post) => toPublicPost(post, { summary: true })),
-      totalPages: 1,
-      currentPage: 1,
+      posts: page.posts.map((post) => toPublicPost(post, { summary: true })),
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
       storageConfigured: hasStorage(),
     });
   } catch (error) {
@@ -58,16 +91,29 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const blocked = await guardMaintenance();
-  if (blocked) {
-    return withDeviceCookie(request, blocked);
+  const maintenance = await guardMaintenance();
+  if (maintenance) {
+    return withDeviceCookie(request, maintenance);
   }
   if (!hasStorage()) {
     return deviceJson(request, { error: "服务器存储尚未配置" }, { status: 503 });
   }
+
   const body = await parseBody<CreatePostBody>(request);
-  const author =
-    typeof body?.author === "string" ? body.author.trim() || "匿名同学" : "匿名同学";
+  const chatgptUser = await getChatGPTUser();
+  const identity = await resolveRequestIdentity(request, chatgptUser, {
+    createAccount: true,
+  });
+  const accessBlock = await getAccessBlock(identity, "write");
+  if (accessBlock) {
+    return blockedResponse(request, accessBlock);
+  }
+
+  const author = identity.account
+    ? identity.account.displayName
+    : typeof body?.author === "string"
+      ? body.author.trim() || "匿名同学"
+      : "匿名同学";
   if (body?.format !== undefined && body.format !== "plain" && body.format !== "markdown") {
     return deviceJson(request, { error: "内容格式无效" }, { status: 400 });
   }
@@ -110,6 +156,7 @@ export async function POST(request: Request) {
   ) {
     return deviceJson(request, { error: "媒体文件信息无效" }, { status: 400 });
   }
+
   const id = randomId();
   const deleteToken = randomId() + randomId();
   const post: PostRecord = {
@@ -118,6 +165,8 @@ export async function POST(request: Request) {
     content,
     createdAt: new Date().toISOString(),
     deleteTokenHash: await sha256Hex(deleteToken),
+    accountId: identity.account?.id,
+    sourceIpHash: identity.ipHash ?? undefined,
     media: media.map((item) => ({
       key: item.key as string,
       name: item.name as string,
@@ -128,11 +177,8 @@ export async function POST(request: Request) {
     reports: 0,
     format,
   };
+
   try {
-    const gate = await enforceSendLimit(request, body ?? {});
-    if (!gate.allowed) {
-      return sendGateResponse(request, gate);
-    }
     const store = getStorage();
     for (const item of post.media) {
       const object = await store.headObject(item.key);
@@ -150,11 +196,36 @@ export async function POST(request: Request) {
       item.size = object.contentLength;
       item.type = object.contentType;
     }
+
+    // Anonymous devices get a fixed one-post-per-minute rule. Signed-in
+    // members use the transparent experience tiers from accounts.ts.
+    const cooldown = await checkPostCooldown(request, identity.account);
+    if (!cooldown.allowed) {
+      return deviceJson(
+        request,
+        {
+          error: `发帖间隔未到，请 ${cooldown.retryAfterSeconds} 秒后再试`,
+          cooldown: true,
+          retryAfterSeconds: cooldown.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(cooldown.retryAfterSeconds) },
+        },
+      );
+    }
+    const gate = await enforceSendLimit(request, body ?? {});
+    if (!gate.allowed) {
+      return sendGateResponse(request, gate);
+    }
+    await recordPostCooldown(cooldown);
     await savePost(post);
+    const account = await grantExperience(identity.account?.id, "post");
     return deviceJson(request, {
       success: true,
       post: toPublicPost(post),
       deleteToken,
+      account: account ? accountPublicProfile(account) : null,
     });
   } catch (error) {
     return withDeviceCookie(request, apiError(error));

@@ -1,6 +1,14 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
+import { getAccessBlock, resolveRequestIdentity } from "../../../../lib/accounts";
+import { getChatGPTUser } from "../../../chatgpt-auth";
 import { sha256Hex } from "../../../../lib/s3";
-import { deletePost, getPost, listReplies, toPublicPost } from "../../../../lib/wall-data";
+import {
+  deletePost,
+  getPost,
+  listReplies,
+  toPublicPost,
+  toPublicReply,
+} from "../../../../lib/wall-data";
 
 function validPostId(id: string) {
   return /^[a-zA-Z0-9_-]{1,120}$/.test(id);
@@ -19,11 +27,27 @@ export async function GET(
     return json({ error: "帖子编号无效" }, { status: 400 });
   }
   try {
+    const identity = await resolveRequestIdentity(request, await getChatGPTUser());
+    const accessBlock = await getAccessBlock(identity, "read");
+    if (accessBlock) {
+      return json(
+        { error: accessBlock.message, blocked: true },
+        {
+          status: accessBlock.status,
+          headers: accessBlock.retryAfterSeconds
+            ? { "Retry-After": String(accessBlock.retryAfterSeconds) }
+            : undefined,
+        },
+      );
+    }
     const post = await getPost(id);
     if (!post) {
       return json({ error: "帖子不存在" }, { status: 404 });
     }
-    return json({ post: toPublicPost(post), replies: await listReplies(id) });
+    return json({
+      post: toPublicPost(post),
+      replies: (await listReplies(id)).map(toPublicReply),
+    });
   } catch (error) {
     return apiError(error);
   }

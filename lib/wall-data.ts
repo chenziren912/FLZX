@@ -23,6 +23,10 @@ export type PostRecord = {
   content: string;
   createdAt: string;
   deleteTokenHash: string;
+  // These fields are deliberately private. Public API serializers below omit
+  // them, while the administrator can use their opaque hashes for moderation.
+  accountId?: string;
+  sourceIpHash?: string;
   media: MediaRecord[];
   likes: number;
   reports: number;
@@ -35,12 +39,16 @@ export type ReplyRecord = {
   author: string;
   content: string;
   createdAt: string;
+  accountId?: string;
+  sourceIpHash?: string;
 };
 
 export type AnnouncementRecord = {
   id: string;
+  title?: string;
   content: string;
   createdAt: string;
+  expiresAt?: string | null;
 };
 
 export type ReportStatus = "open" | "resolved" | "dismissed";
@@ -52,6 +60,8 @@ export type ReportRecord = {
   createdAt: string;
   status: ReportStatus;
   visitorHash: string;
+  accountId?: string;
+  sourceIpHash?: string;
 };
 
 export type SafeReport = Omit<ReportRecord, "visitorHash">;
@@ -117,9 +127,49 @@ export async function listPosts(search = "") {
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-export type PublicPost = Omit<PostRecord, "deleteTokenHash"> & {
+function postCursor(post: PostRecord) {
+  return post.createdAt + "|" + post.id;
+}
+
+export type PostPage = {
+  posts: PostRecord[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+/**
+ * COS does not offer a useful secondary index for the wall's text search, so
+ * we still filter the records server-side. Returning only a compact page to
+ * the browser keeps the visible feed lazy, even for a much larger wall.
+ */
+export async function listPostsPage(
+  search = "",
+  cursor = "",
+  limit = 12,
+): Promise<PostPage> {
+  const posts = await listPosts(search);
+  const pageSize = Math.min(30, Math.max(6, Math.floor(limit) || 12));
+  const startIndex = cursor
+    ? Math.max(0, posts.findIndex((post) => postCursor(post) === cursor) + 1)
+    : 0;
+  const page = posts.slice(startIndex, startIndex + pageSize);
+  const hasMore = startIndex + page.length < posts.length;
+  return {
+    posts: page,
+    nextCursor: hasMore && page.length ? postCursor(page[page.length - 1]) : null,
+    hasMore,
+  };
+}
+
+export type PublicPost = Omit<
+  PostRecord,
+  "deleteTokenHash" | "accountId" | "sourceIpHash"
+> & {
   hasMore?: boolean;
 };
+
+export type AdminPost = Omit<PostRecord, "deleteTokenHash">;
+export type PublicReply = Omit<ReplyRecord, "accountId" | "sourceIpHash">;
 
 function markdownPreview(content: string) {
   if (content.length <= MARKDOWN_PREVIEW_LENGTH) {
@@ -145,8 +195,10 @@ export function toPublicPost(
   post: PostRecord,
   options: { summary?: boolean } = {},
 ): PublicPost {
-  const { deleteTokenHash, ...publicPost } = post;
+  const { deleteTokenHash, accountId, sourceIpHash, ...publicPost } = post;
   void deleteTokenHash;
+  void accountId;
+  void sourceIpHash;
   if (
     options.summary &&
     publicPost.format === "markdown" &&
@@ -159,6 +211,19 @@ export function toPublicPost(
     };
   }
   return publicPost;
+}
+
+export function toAdminPost(post: PostRecord): AdminPost {
+  const { deleteTokenHash, ...adminPost } = post;
+  void deleteTokenHash;
+  return adminPost;
+}
+
+export function toPublicReply(reply: ReplyRecord): PublicReply {
+  const { accountId, sourceIpHash, ...publicReply } = reply;
+  void accountId;
+  void sourceIpHash;
+  return publicReply;
 }
 
 export function toSafeReport(report: ReportRecord): SafeReport {
@@ -233,7 +298,15 @@ export async function listAnnouncements() {
       keys.map((key) => readJson<AnnouncementRecord>(store, key)),
     )
   ).filter((item): item is AnnouncementRecord => Boolean(item));
-  return records.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return records
+    .filter((announcement) => {
+      if (!announcement.expiresAt) {
+        return true;
+      }
+      const expiry = Date.parse(announcement.expiresAt);
+      return !Number.isFinite(expiry) || expiry > Date.now();
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
 export async function saveAnnouncement(announcement: AnnouncementRecord) {
@@ -242,6 +315,15 @@ export async function saveAnnouncement(announcement: AnnouncementRecord) {
     announcementKey(announcement.createdAt, announcement.id),
     announcement,
   );
+}
+
+export async function deleteAnnouncement(id: string) {
+  const key = await findKeyById(ANNOUNCEMENTS_PREFIX, id);
+  if (!key) {
+    return false;
+  }
+  await getStorage().deleteObject(key);
+  return true;
 }
 
 export async function listReports(status?: ReportStatus) {
@@ -309,7 +391,12 @@ export async function addInteraction(
   return (await claimInteraction(postId, visitorId, action)).added;
 }
 
-export async function addReport(postId: string, visitorId: string, reason: string) {
+export async function addReport(
+  postId: string,
+  visitorId: string,
+  reason: string,
+  context: { accountId?: string; sourceIpHash?: string } = {},
+) {
   const claim = await claimInteraction(postId, visitorId, "report");
   if (!claim.added) {
     return null;
@@ -321,6 +408,8 @@ export async function addReport(postId: string, visitorId: string, reason: strin
     createdAt: new Date().toISOString(),
     status: "open",
     visitorHash: claim.visitorHash,
+    accountId: context.accountId,
+    sourceIpHash: context.sourceIpHash,
   };
   await writeJson(getStorage(), reportKey(report.createdAt, report.id), report);
   return report;

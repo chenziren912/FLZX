@@ -1,4 +1,6 @@
 import { apiError, guardMaintenance, json, parseBody } from "../../../../lib/api";
+import { getAccessBlock, resolveRequestIdentity } from "../../../../lib/accounts";
+import { getChatGPTUser } from "../../../chatgpt-auth";
 import {
   getStorage,
   hasStorage,
@@ -14,6 +16,21 @@ export async function POST(request: Request) {
   }
   if (!hasStorage()) {
     return json({ error: "服务器存储尚未配置" }, { status: 503 });
+  }
+  const identity = await resolveRequestIdentity(request, await getChatGPTUser(), {
+    createAccount: true,
+  });
+  const accessBlock = await getAccessBlock(identity, "write");
+  if (accessBlock) {
+    return json(
+      { error: accessBlock.message, blocked: true },
+      {
+        status: accessBlock.status,
+        headers: accessBlock.retryAfterSeconds
+          ? { "Retry-After": String(accessBlock.retryAfterSeconds) }
+          : undefined,
+      },
+    );
   }
   const body = await parseBody<{
     key?: string;

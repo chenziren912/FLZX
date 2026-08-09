@@ -3,7 +3,7 @@ import {
   deletePost,
   getPost,
   listPosts,
-  toPublicPost,
+  toAdminPost,
 } from "../../../../lib/wall-data";
 
 function validPostId(id: string) {
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     return unauthorized;
   }
   try {
-    return json({ posts: (await listPosts()).map((post) => toPublicPost(post)) });
+    return json({ posts: (await listPosts()).map(toAdminPost) });
   } catch (error) {
     return apiError(error);
   }

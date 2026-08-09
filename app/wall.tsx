@@ -44,6 +44,54 @@ type Reply = {
   createdAt: string;
 };
 
+type PostingRule = {
+  level: number;
+  cooldownSeconds: number;
+  nextLevelXp: number | null;
+};
+
+type AccountProfile = {
+  id: string;
+  displayName: string;
+  createdAt: string;
+  xp: number;
+  postCount: number;
+  replyCount: number;
+  postingRule: PostingRule;
+  restriction: {
+    kind: "ban" | "mute";
+    reason: string;
+    createdAt: string;
+    expiresAt: string | null;
+  } | null;
+};
+
+type AccountMessage = {
+  id: string;
+  accountId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  readAt?: string;
+};
+
+type AccountState = {
+  authenticated: boolean;
+  signInPath?: string;
+  signOutPath?: string;
+  anonymousPostingRule?: PostingRule;
+  profile?: AccountProfile;
+  messages?: AccountMessage[];
+  unreadMessages?: number;
+};
+
+type Announcement = {
+  id: string;
+  title?: string;
+  content: string;
+  createdAt: string;
+};
+
 type ApiError = Error & {
   maintenance?: boolean;
   captchaRequired?: boolean;
@@ -219,8 +267,30 @@ function uploadFileWithProgress(
   });
 }
 
+function announcementPreferenceKey(id: string) {
+  return "flzx-announcement-" + id;
+}
+
+function announcementCanShow(announcement: Announcement) {
+  const stored = window.localStorage.getItem(announcementPreferenceKey(announcement.id));
+  if (stored === "never") {
+    return false;
+  }
+  const until = Number(stored);
+  if (Number.isFinite(until) && until > Date.now()) {
+    return false;
+  }
+  if (stored) {
+    window.localStorage.removeItem(announcementPreferenceKey(announcement.id));
+  }
+  return true;
+}
+
 export default function Wall() {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [loadingMorePosts, setLoadingMorePosts] = useState(false);
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [searching, setSearching] = useState(false);
@@ -248,6 +318,11 @@ export default function Wall() {
     "正在申请消息权限，请同意",
   );
   const [notificationEnabled, setNotificationEnabled] = useState(false);
+  const [account, setAccount] = useState<AccountState | null>(null);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [reportingPostId, setReportingPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [repliesByPost, setRepliesByPost] = useState<Record<string, Reply[]>>({});
@@ -284,6 +359,7 @@ export default function Wall() {
   const captchaRetryRef = useRef<CaptchaRetry | null>(null);
   const feedbackTimerRef = useRef<number | null>(null);
   const interactionBusyPostIdsRef = useRef<Set<string>>(new Set());
+  const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
 
   function showActionFeedback(next: ActionFeedback) {
     if (feedbackTimerRef.current !== null) {
@@ -403,69 +479,140 @@ export default function Wall() {
     }
   }
 
-  const loadPosts = useCallback(async (keyword = "") => {
-    try {
-      const data = await readJson<{ posts: Post[] }>(
-        "/api/posts?search=" + encodeURIComponent(keyword),
-      );
-      const withMediaUrls = await Promise.all(
-        data.posts.map(async (post) => ({
-          ...post,
-          media: await Promise.all(
-            post.media.map(async (media) => {
+  const loadPosts = useCallback(
+    async (
+      keyword = "",
+      options: {
+        cursor?: string | null;
+        append?: boolean;
+        keepPagination?: boolean;
+      } = {},
+    ) => {
+      try {
+        const query = new URLSearchParams({ search: keyword, limit: "12" });
+        if (options.cursor) {
+          query.set("cursor", options.cursor);
+        }
+        const data = await readJson<{
+          posts: Post[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        }>("/api/posts?" + query.toString());
+        const withMediaUrls = await Promise.all(
+          data.posts.map(async (post) => ({
+            ...post,
+            media: await Promise.all(
+              post.media.map(async (media) => {
+                try {
+                  const result = await readJson<{ url: string }>(
+                    "/api/media/url?key=" + encodeURIComponent(media.key),
+                  );
+                  return { ...media, url: result.url };
+                } catch {
+                  return media;
+                }
+              }),
+            ),
+          })),
+        );
+        if (!keyword && !options.append) {
+          const previousIds = knownPostIdsRef.current;
+          if (
+            previousIds &&
+            notificationEnabledRef.current &&
+            typeof Notification !== "undefined" &&
+            Notification.permission === "granted"
+          ) {
+            const freshPosts = withMediaUrls.filter(
+              (post) => !previousIds.has(post.id),
+            );
+            if (freshPosts.length > 0) {
               try {
-                const result = await readJson<{ url: string }>(
-                  "/api/media/url?key=" + encodeURIComponent(media.key),
-                );
-                return { ...media, url: result.url };
+                const first = freshPosts[0];
+                new Notification("校园娱乐墙有新动态", {
+                  body:
+                    freshPosts.length === 1
+                      ? `${first.author}：${first.content.slice(0, 80)}`
+                      : `又有 ${freshPosts.length} 条新动态，快来看看。`,
+                  tag: "flzx-new-posts",
+                });
               } catch {
-                return media;
+                // Notification can still fail when a browser revokes permission.
               }
-            }),
-          ),
-        })),
-      );
-      if (!keyword) {
-        const nextIds = new Set(withMediaUrls.map((post) => post.id));
-        const previousIds = knownPostIdsRef.current;
-        if (
-          previousIds &&
-          notificationEnabledRef.current &&
-          typeof Notification !== "undefined" &&
-          Notification.permission === "granted"
-        ) {
-          const freshPosts = withMediaUrls.filter(
-            (post) => !previousIds.has(post.id),
-          );
-          if (freshPosts.length > 0) {
-            try {
-              const first = freshPosts[0];
-              new Notification("校园娱乐墙有新动态", {
-                body:
-                  freshPosts.length === 1
-                    ? `${first.author}：${first.content.slice(0, 80)}`
-                    : `又有 ${freshPosts.length} 条新动态，快来看看。`,
-                tag: "flzx-new-posts",
-              });
-            } catch {
-              // Notification can still fail when a browser revokes permission.
             }
           }
+          knownPostIdsRef.current = new Set([
+            ...(previousIds ?? []),
+            ...withMediaUrls.map((post) => post.id),
+          ]);
         }
-        knownPostIdsRef.current = nextIds;
+        setPosts((current) => {
+          if (!options.append) {
+            if (!options.keepPagination) {
+              return withMediaUrls;
+            }
+            const refreshed = new Map<string, Post>();
+            [...withMediaUrls, ...current].forEach((post) => {
+              if (!refreshed.has(post.id)) {
+                refreshed.set(post.id, post);
+              }
+            });
+            return [...refreshed.values()];
+          }
+          const merged = new Map<string, Post>();
+          [...current, ...withMediaUrls].forEach((post) => {
+            if (!merged.has(post.id)) {
+              merged.set(post.id, post);
+            }
+          });
+          return [...merged.values()];
+        });
+        if (!options.keepPagination) {
+          setNextCursor(data.nextCursor ?? null);
+          setHasMorePosts(Boolean(data.hasMore));
+        }
+        setMaintenance(false);
+      } catch (caught) {
+        const requestError = caught as ApiError;
+        if (
+          requestError.maintenance ||
+          requestError.message === "服务器正在重启更新"
+        ) {
+          setMaintenance(true);
+        } else {
+          setError(requestError.message);
+        }
       }
-      setPosts(withMediaUrls);
-      setMaintenance(false);
+    },
+    [],
+  );
+
+  const loadAccount = useCallback(async () => {
+    setAccountLoading(true);
+    try {
+      const data = await readJson<AccountState>("/api/account");
+      setAccount(data);
     } catch (caught) {
-      const requestError = caught as ApiError;
-      if (
-        requestError.maintenance ||
-        requestError.message === "服务器正在重启更新"
-      ) {
-        setMaintenance(true);
-      } else {
-        setError(requestError.message);
-      }
+      // A temporary account request failure must not prevent anonymous use of
+      // the wall. The public feed still surfaces any storage outage.
+      setAccount(null);
+      setError((current) => current || (caught as Error).message);
+    } finally {
+      setAccountLoading(false);
+    }
+  }, []);
+
+  const loadAnnouncements = useCallback(async () => {
+    try {
+      const data = await readJson<{ announcements: Announcement[] }>(
+        "/api/announcements",
+      );
+      const available = data.announcements.filter(announcementCanShow);
+      setAnnouncements(available);
+      setAnnouncementOpen(available.length > 0);
+    } catch {
+      // Announcements are enhancement-only; do not interrupt the wall when
+      // storage is briefly unavailable.
     }
   }, []);
 
@@ -524,18 +671,96 @@ export default function Wall() {
   }, [notificationEnabled]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadPosts(), 0);
+    const timer = window.setTimeout(() => {
+      void loadPosts();
+      void loadAccount();
+      void loadAnnouncements();
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadPosts]);
+  }, [loadAccount, loadAnnouncements, loadPosts]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!activeSearch && document.visibilityState === "visible") {
-        void loadPosts();
+        void loadPosts("", { keepPagination: true });
       }
     }, 30000);
     return () => window.clearInterval(timer);
   }, [activeSearch, loadPosts]);
+
+  const loadMorePosts = useCallback(async () => {
+    if (!hasMorePosts || !nextCursor || loadingMorePosts) {
+      return;
+    }
+    setLoadingMorePosts(true);
+    try {
+      await loadPosts(activeSearch, { cursor: nextCursor, append: true });
+    } finally {
+      setLoadingMorePosts(false);
+    }
+  }, [activeSearch, hasMorePosts, loadingMorePosts, loadPosts, nextCursor]);
+
+  useEffect(() => {
+    const target = loadMoreTriggerRef.current;
+    if (!target || !hasMorePosts || !nextCursor || !("IntersectionObserver" in window)) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void loadMorePosts();
+        }
+      },
+      { rootMargin: "280px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMorePosts, loadMorePosts, nextCursor]);
+
+  function dismissAnnouncement(mode: "never" | "day" | "later") {
+    const announcement = announcements[0];
+    if (!announcement) {
+      setAnnouncementOpen(false);
+      return;
+    }
+    if (mode === "never") {
+      window.localStorage.setItem(announcementPreferenceKey(announcement.id), "never");
+    } else if (mode === "day") {
+      window.localStorage.setItem(
+        announcementPreferenceKey(announcement.id),
+        String(Date.now() + 24 * 60 * 60 * 1000),
+      );
+    }
+    setAnnouncementOpen(false);
+    setAnnouncements((current) => current.slice(1));
+  }
+
+  async function markMessageRead(messageId: string) {
+    try {
+      await readJson<{ success: true }>("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId }),
+      });
+      setAccount((current) => {
+        if (!current?.messages) {
+          return current;
+        }
+        const messages = current.messages.map((message) =>
+          message.id === messageId && !message.readAt
+            ? { ...message, readAt: new Date().toISOString() }
+            : message,
+        );
+        return {
+          ...current,
+          messages,
+          unreadMessages: messages.filter((message) => !message.readAt).length,
+        };
+      });
+    } catch (caught) {
+      setError((caught as Error).message || "站内信状态更新失败");
+    }
+  }
 
   function toggleTheme() {
     const next = !dark;
@@ -700,7 +925,11 @@ export default function Wall() {
       }
       preparedMediaRef.current = media;
       setStatus("正在发布…");
-      const result = await readJson<{ post: Post; deleteToken: string }>(
+      const result = await readJson<{
+        post: Post;
+        deleteToken: string;
+        account?: AccountProfile | null;
+      }>(
         "/api/posts",
         {
           method: "POST",
@@ -716,6 +945,14 @@ export default function Wall() {
       );
       if (!activeSearch && knownPostIdsRef.current) {
         knownPostIdsRef.current.add(result.post.id);
+      }
+      const updatedProfile = result.account;
+      if (updatedProfile) {
+        setAccount((current) =>
+          current
+            ? { ...current, authenticated: true, profile: updatedProfile }
+            : current,
+        );
       }
       const tokens = JSON.parse(
         window.localStorage.getItem("flzx-delete-tokens") ?? "{}",
@@ -995,7 +1232,10 @@ export default function Wall() {
       return next;
     });
     try {
-      const result = await readJson<{ reply: Reply }>(
+      const result = await readJson<{
+        reply: Reply;
+        account?: AccountProfile | null;
+      }>(
         "/api/posts/" + postId + "/reply",
         {
           method: "POST",
@@ -1013,6 +1253,14 @@ export default function Wall() {
       }));
       setReplyDrafts((current) => ({ ...current, [postId]: "" }));
       setExpandedReplyPostIds((current) => ({ ...current, [postId]: true }));
+      const updatedProfile = result.account;
+      if (updatedProfile) {
+        setAccount((current) =>
+          current
+            ? { ...current, authenticated: true, profile: updatedProfile }
+            : current,
+        );
+      }
       showActionFeedback({
         kind: "success",
         title: "发送成功",
@@ -1199,6 +1447,7 @@ export default function Wall() {
   }
 
   const totalUploadPercent = overallUploadPercent(uploadProgress);
+  const activeAnnouncement = announcements[0] ?? null;
 
   return (
     <main className="wall-page">
@@ -1223,6 +1472,37 @@ export default function Wall() {
             </span>
           </Link>
           <div className="topbar-actions">
+            {account?.authenticated && account.profile ? (
+              <button
+                className="account-button"
+                type="button"
+                onClick={() => {
+                  setAccountPanelOpen(true);
+                  void loadAccount();
+                }}
+                aria-label="打开账户中心"
+                title="账户中心"
+              >
+                <span className="account-avatar">
+                  {account.profile.displayName.slice(0, 1) || "我"}
+                </span>
+                <span className="account-button-copy">
+                  <strong>{account.profile.displayName}</strong>
+                  <small>
+                    Lv.{account.profile.postingRule.level} · {account.unreadMessages ?? 0} 条消息
+                  </small>
+                </span>
+              </button>
+            ) : accountLoading ? (
+              <span className="account-loading-pill">账户加载中</span>
+            ) : (
+              <a
+                className="soft-button account-login-button"
+                href={account?.signInPath ?? "/signin-with-chatgpt?return_to=%2F"}
+              >
+                登录
+              </a>
+            )}
             <button
               className={"icon-button notification-button" + (notificationEnabled ? " enabled" : "")}
               type="button"
@@ -1294,9 +1574,9 @@ export default function Wall() {
               <h2>发表你的想法</h2>
               <div className="card-heading-actions">
                 <span>
-                  {contentFormat === "markdown"
-                    ? `Markdown 最多 ${MARKDOWN_CONTENT_LIMIT} 字`
-                    : `纯文本最多 ${PLAIN_CONTENT_LIMIT} 字`}
+                  {account?.authenticated && account.profile
+                    ? `Lv.${account.profile.postingRule.level} · 发帖间隔 ${account.profile.postingRule.cooldownSeconds} 秒`
+                    : "未登录：每分钟 1 条"}
                 </span>
                 <button
                   className={
@@ -1316,10 +1596,19 @@ export default function Wall() {
             <form className="compose-form" onSubmit={publish}>
               <input
                 className="form-input"
-                value={author}
+                value={
+                  account?.authenticated && account.profile
+                    ? account.profile.displayName
+                    : author
+                }
                 onChange={(event) => setAuthor(event.target.value)}
-                placeholder="你的昵称 (默认匿名同学)"
+                placeholder={
+                  account?.authenticated
+                    ? "已使用登录账户昵称"
+                    : "你的昵称 (默认匿名同学)"
+                }
                 maxLength={20}
+                disabled={Boolean(account?.authenticated)}
               />
               <textarea
                 className="form-textarea"
@@ -1448,6 +1737,11 @@ export default function Wall() {
                     {contentFormat === "markdown"
                       ? MARKDOWN_CONTENT_LIMIT
                       : PLAIN_CONTENT_LIMIT}
+                  </span>
+                  <span className="posting-rule-note">
+                    {contentFormat === "markdown"
+                      ? `Markdown 最多 ${MARKDOWN_CONTENT_LIMIT} 字`
+                      : `纯文本最多 ${PLAIN_CONTENT_LIMIT} 字`}
                   </span>
                 </div>
                 <button
@@ -1619,16 +1913,27 @@ export default function Wall() {
                       >
                         <input
                           className="reply-author-input"
-                          value={replyAuthors[post.id] ?? ""}
+                          value={
+                            account?.authenticated && account.profile
+                              ? account.profile.displayName
+                              : replyAuthors[post.id] ?? ""
+                          }
                           onChange={(event) =>
                             setReplyAuthors((current) => ({
                               ...current,
                               [post.id]: event.target.value,
                             }))
                           }
-                          placeholder="昵称（默认匿名同学）"
+                          placeholder={
+                            account?.authenticated
+                              ? "已使用登录账户昵称"
+                              : "昵称（默认匿名同学）"
+                          }
                           maxLength={20}
-                          disabled={replyBusyPostId === post.id}
+                          disabled={
+                            replyBusyPostId === post.id ||
+                            Boolean(account?.authenticated)
+                          }
                         />
                         <div className="reply-compose-row">
                           <textarea
@@ -1663,6 +1968,19 @@ export default function Wall() {
               ))
             )}
           </div>
+          {hasMorePosts && (
+            <div className="load-more-area" ref={loadMoreTriggerRef}>
+              <span className="load-more-spinner" aria-hidden="true" />
+              <button
+                className="soft-button load-more-button"
+                type="button"
+                onClick={() => void loadMorePosts()}
+                disabled={loadingMorePosts}
+              >
+                {loadingMorePosts ? "正在加载更多…" : "加载更多动态"}
+              </button>
+            </div>
+          )}
         </section>
 
       </div>
@@ -2092,6 +2410,166 @@ export default function Wall() {
               </section>
             </div>
           )}
+        </div>
+      )}
+      {announcementOpen && activeAnnouncement && (
+        <div
+          className="dialog-backdrop announcement-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              dismissAnnouncement("later");
+            }
+          }}
+        >
+          <section
+            className="glass-card dialog-card announcement-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="announcement-dialog-title"
+          >
+            <div className="announcement-dialog-topline">
+              <span className="announcement-dialog-icon" aria-hidden="true">◎</span>
+              <span>校园公告</span>
+            </div>
+            <h2 id="announcement-dialog-title">
+              {activeAnnouncement.title || "校园公告"}
+            </h2>
+            <p className="announcement-time">发布于 {formatTime(activeAnnouncement.createdAt)}</p>
+            <p className="announcement-content">{activeAnnouncement.content}</p>
+            <div className="announcement-actions">
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => dismissAnnouncement("never")}
+              >
+                不再显示
+              </button>
+              <button
+                className="soft-button"
+                type="button"
+                onClick={() => dismissAnnouncement("day")}
+              >
+                1 天内不再显示
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => dismissAnnouncement("later")}
+              >
+                稍后再说
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {accountPanelOpen && account?.authenticated && account.profile && (
+        <div
+          className="dialog-backdrop account-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setAccountPanelOpen(false);
+            }
+          }}
+        >
+          <section
+            className="glass-card account-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="account-dialog-title"
+          >
+            <div className="account-dialog-head">
+              <div className="account-dialog-profile">
+                <span className="account-dialog-avatar">
+                  {account.profile.displayName.slice(0, 1) || "我"}
+                </span>
+                <div>
+                  <span className="account-dialog-kicker">MY CAMPUS WALL</span>
+                  <h2 id="account-dialog-title">{account.profile.displayName}</h2>
+                </div>
+              </div>
+              <button
+                className="icon-button account-close-button"
+                type="button"
+                onClick={() => setAccountPanelOpen(false)}
+                aria-label="关闭账户中心"
+              >
+                ×
+              </button>
+            </div>
+            <div className="account-stats-grid">
+              <div>
+                <strong>{account.profile.xp}</strong>
+                <span>经验</span>
+              </div>
+              <div>
+                <strong>Lv.{account.profile.postingRule.level}</strong>
+                <span>当前等级</span>
+              </div>
+              <div>
+                <strong>{account.profile.postingRule.cooldownSeconds}s</strong>
+                <span>发帖间隔</span>
+              </div>
+            </div>
+            <p className="account-rule-copy">
+              {account.profile.postingRule.nextLevelXp
+                ? `再获得 ${Math.max(0, account.profile.postingRule.nextLevelXp - account.profile.xp)} 经验，可缩短发帖间隔。发帖 +20，评论 +6。`
+                : "已达到最高发帖等级。发帖 +20，评论 +6。"}
+            </p>
+            {account.profile.restriction && (
+              <p className="account-restriction-note">
+                当前{account.profile.restriction.kind === "ban" ? "封禁" : "禁言"}：
+                {account.profile.restriction.reason || "管理员限制"}
+              </p>
+            )}
+            <div className="account-messages-head">
+              <div>
+                <h3>站内消息</h3>
+                <span>{account.unreadMessages ?? 0} 条未读</span>
+              </div>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => void loadAccount()}
+                disabled={accountLoading}
+              >
+                刷新
+              </button>
+            </div>
+            <div className="account-message-list">
+              {(account.messages ?? []).length === 0 ? (
+                <p className="account-message-empty">暂时没有站内消息。</p>
+              ) : (
+                account.messages?.map((message) => (
+                  <button
+                    className={"account-message-item" + (!message.readAt ? " unread" : "")}
+                    type="button"
+                    key={message.id}
+                    onClick={() => void markMessageRead(message.id)}
+                  >
+                    <span className="account-message-item-head">
+                      <strong>{message.title}</strong>
+                      <small>{formatTime(message.createdAt)}</small>
+                    </span>
+                    <span>{message.content}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="account-dialog-actions">
+              <a className="soft-button" href={account.signOutPath ?? "/signout-with-chatgpt?return_to=%2F"}>
+                退出登录
+              </a>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => setAccountPanelOpen(false)}
+              >
+                完成
+              </button>
+            </div>
+          </section>
         </div>
       )}
       {notificationPromptOpen && (

@@ -1,3 +1,10 @@
+import { getChatGPTUser } from "../../../../chatgpt-auth";
+import {
+  accountPublicProfile,
+  getAccessBlock,
+  grantExperience,
+  resolveRequestIdentity,
+} from "../../../../../lib/accounts";
 import { apiError, guardMaintenance, parseBody } from "../../../../../lib/api";
 import {
   deviceJson,
@@ -11,28 +18,53 @@ import {
   listReplies,
   ReplyRecord,
   saveReply,
+  toPublicReply,
 } from "../../../../../lib/wall-data";
 
+function blockedResponse(
+  request: Request,
+  block: { status: 403 | 423; message: string; retryAfterSeconds?: number },
+) {
+  return deviceJson(
+    request,
+    { error: block.message, blocked: true },
+    {
+      status: block.status,
+      headers: block.retryAfterSeconds
+        ? { "Retry-After": String(block.retryAfterSeconds) }
+        : undefined,
+    },
+  );
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const blocked = await guardMaintenance();
   if (blocked) {
-    return withDeviceCookie(_request, blocked);
+    return withDeviceCookie(request, blocked);
   }
   if (!hasStorage()) {
-    return deviceJson(_request, { replies: [], storageConfigured: false });
+    return deviceJson(request, { replies: [], storageConfigured: false });
   }
   const { id } = await params;
   try {
+    const identity = await resolveRequestIdentity(request, await getChatGPTUser());
+    const accessBlock = await getAccessBlock(identity, "read");
+    if (accessBlock) {
+      return blockedResponse(request, accessBlock);
+    }
     if (!(await getPost(id))) {
-      return deviceJson(_request, { error: "帖子不存在" }, { status: 404 });
+      return deviceJson(request, { error: "帖子不存在" }, { status: 404 });
     }
     const replies = await listReplies(id);
-    return deviceJson(_request, { replies, storageConfigured: true });
+    return deviceJson(request, {
+      replies: replies.map(toPublicReply),
+      storageConfigured: true,
+    });
   } catch (error) {
-    return withDeviceCookie(_request, apiError(error));
+    return withDeviceCookie(request, apiError(error));
   }
 }
 
@@ -62,6 +94,14 @@ export async function POST(
     return deviceJson(request, { error: "昵称格式无效" }, { status: 400 });
   }
   try {
+    const chatgptUser = await getChatGPTUser();
+    const identity = await resolveRequestIdentity(request, chatgptUser, {
+      createAccount: true,
+    });
+    const accessBlock = await getAccessBlock(identity, "write");
+    if (accessBlock) {
+      return blockedResponse(request, accessBlock);
+    }
     if (!(await getPost(id))) {
       return deviceJson(request, { error: "帖子不存在" }, { status: 404 });
     }
@@ -72,12 +112,21 @@ export async function POST(
     const reply: ReplyRecord = {
       id: crypto.randomUUID(),
       postId: id,
-      author: body?.author?.trim().slice(0, 20) || "匿名同学",
+      author: identity.account
+        ? identity.account.displayName
+        : body?.author?.trim().slice(0, 20) || "匿名同学",
       content,
       createdAt: new Date().toISOString(),
+      accountId: identity.account?.id,
+      sourceIpHash: identity.ipHash ?? undefined,
     };
     await saveReply(reply);
-    return deviceJson(request, { success: true, reply });
+    const account = await grantExperience(identity.account?.id, "reply");
+    return deviceJson(request, {
+      success: true,
+      reply: toPublicReply(reply),
+      account: account ? accountPublicProfile(account) : null,
+    });
   } catch (error) {
     return withDeviceCookie(request, apiError(error));
   }
